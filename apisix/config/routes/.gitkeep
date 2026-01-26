@@ -1,0 +1,6 @@
+# 路由配置目录
+# 
+# 在此目录下创建各个微服务的路由配置文件
+# 例如: user-routes.yaml, order-routes.yaml
+# 
+# 使用 make update-routes 命令将配置同步到 APISIX

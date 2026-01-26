@@ -1,0 +1,63 @@
+apisix:
+  node_listen: 9080
+  enable_admin: true
+  enable_admin_cors: true
+  enable_debug: false
+  enable_dev_mode: false
+  enable_reuseport: true
+  enable_ipv6: true
+  
+  config_center: etcd
+  
+  allow_admin:
+    - 0.0.0.0/0
+
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  
+  admin:
+    admin_key:
+      - name: "admin"
+        key: edd1c9f034335f136f87ad84b625c8f1
+        role: admin
+    
+    enable_admin_cors: true
+    allow_admin:
+      - 0.0.0.0/0
+    
+    admin_listen:
+      ip: 0.0.0.0
+      port: 9180
+  
+  etcd:
+    host:
+      - "http://etcd:2379"
+    prefix: "/apisix"
+    timeout: 30
+
+plugin_attr:
+  prometheus:
+    export_addr:
+      ip: "0.0.0.0"
+      port: 9091
+
+nginx_config:
+  error_log: "/usr/local/apisix/logs/error.log"
+  error_log_level: "warn"
+  
+  http:
+    access_log: "/usr/local/apisix/logs/access.log"
+    access_log_format: '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" $upstream_addr $upstream_status $upstream_response_time $request_time'
+    
+    keepalive_timeout: 60s
+    client_header_timeout: 60s
+    client_body_timeout: 60s
+    send_timeout: 10s
+    
+    underscores_in_headers: "on"
+    real_ip_header: "X-Real-IP"
+    
+    lua_shared_dict:
+      prometheus-metrics: 15m

@@ -1,0 +1,33 @@
+# Services directory (local development)
+services/
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Generated files
+*.pb.go
+bin/
+dist/
+
+# Docker
+.docker/
+
+# Temporary files
+tmp/
+temp/
