@@ -25,24 +25,6 @@ services:
     networks:
       - uyou-network
 
-  # ==================== 缓存服务 ====================
-  
-  # Redis - 通用缓存(可选)
-  redis:
-    image: redis:7-alpine
-    container_name: uyou-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - uyou-network
-
   # ==================== API 网关 ====================
   
   # Apache APISIX - API Gateway
@@ -68,4 +50,3 @@ networks:
 
 volumes:
   etcd_data:
-  redis_data:

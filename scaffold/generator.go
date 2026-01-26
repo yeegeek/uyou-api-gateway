@@ -11,8 +11,8 @@ import (
 
 // ServiceConfig 服务配置
 type ServiceConfig struct {
-	ServiceName   string // 服务名称，如 user
-	ServiceTitle  string // 服务标题，如 User
+	ServiceName   string // 服务名称，如 chat
+	ServiceTitle  string // 服务标题，如 Chat
 	ModulePath    string // Go 模块路径
 	Port          int    // gRPC 端口
 	HTTPPort      int    // HTTP 端口(用于健康检查)
@@ -44,6 +44,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 4. 更新 docker-compose.dev.yml
+	if err := updateDevCompose(config); err != nil {
+		fmt.Printf("⚠️  更新 docker-compose.dev.yml 失败: %v\n", err)
+	} else {
+		fmt.Println("✅ 已将服务添加到 docker-compose.dev.yml")
+	}
+
 	fmt.Println()
 	fmt.Println("✅ 服务生成成功！")
 	printNextSteps(config)
@@ -54,8 +61,8 @@ func collectInput() *ServiceConfig {
 	reader := bufio.NewReader(os.Stdin)
 	config := &ServiceConfig{}
 
-	// 服务名称
-	config.ServiceName = strings.ToLower(readInput(reader, "服务名称 (如 user, order, product)", "user"))
+	// 服务名称 (不带 -service 后缀)
+	config.ServiceName = strings.ToLower(readInput(reader, "服务名称 (如 chat, user, order)", "chat"))
 	config.ServiceTitle = strings.Title(config.ServiceName)
 
 	// Go 模块路径
@@ -143,13 +150,13 @@ func confirmConfig(config *ServiceConfig) bool {
 }
 
 func generateService(config *ServiceConfig) error {
-	// 确定服务目录
+	// 确定服务目录 (不带 -service 后缀)
 	cwd, _ := os.Getwd()
 	var serviceDir string
 	if filepath.Base(cwd) == "scaffold" {
-		serviceDir = filepath.Join("../services", config.ServiceName+"-service")
+		serviceDir = filepath.Join("../services", config.ServiceName)
 	} else {
-		serviceDir = filepath.Join("services", config.ServiceName+"-service")
+		serviceDir = filepath.Join("services", config.ServiceName)
 	}
 
 	fmt.Printf("📁 创建目录: %s\n", serviceDir)
@@ -165,6 +172,7 @@ func generateService(config *ServiceConfig) error {
 		"pkg/logger",
 		"api/proto",
 		"config",
+		"deployments",
 	}
 
 	for _, dir := range dirs {
@@ -186,7 +194,7 @@ func generateService(config *ServiceConfig) error {
 	if err := generateDockerfile(serviceDir, config); err != nil {
 		return err
 	}
-	if err := generateDockerCompose(serviceDir, config); err != nil {
+	if err := generateProductionDockerCompose(serviceDir, config); err != nil {
 		return err
 	}
 	if err := generateProto(serviceDir, config); err != nil {
@@ -235,7 +243,7 @@ require (
 }
 
 func generateMakefile(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`.PHONY: proto build run test clean docker-build docker-run
+	content := fmt.Sprintf(`.PHONY: proto build test clean docker-build
 
 # 生成 Proto 代码
 proto:
@@ -245,18 +253,7 @@ proto:
 
 # 构建服务
 build:
-	go build -o bin/%s-service cmd/server/main.go
-
-# 运行服务(本地开发, 使用 docker-compose 启动数据库)
-run:
-	docker compose up -d
-	@echo "等待数据库启动..."
-	@sleep 3
-	go run cmd/server/main.go
-
-# 停止服务
-stop:
-	docker compose down
+	go build -o bin/%s cmd/server/main.go
 
 # 测试
 test:
@@ -265,23 +262,22 @@ test:
 # 清理
 clean:
 	rm -rf bin/
-	docker compose down -v
 
 # Docker 构建
 docker-build:
-	docker build -t %s-service:latest .
-
-# Docker 运行
-docker-run:
-	docker compose up -d
+	docker build -t %s:latest .
 `, config.ServiceName, config.ServiceName)
 	return os.WriteFile(filepath.Join(serviceDir, "Makefile"), []byte(content), 0644)
 }
 
 func generateDockerfile(serviceDir string, config *ServiceConfig) error {
-	content := fmt.Sprintf(`FROM golang:1.21-alpine AS builder
+	content := fmt.Sprintf(`# 构建阶段
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
+
+# 安装构建依赖
+RUN apk add --no-cache git
 
 # 复制依赖文件
 COPY go.mod go.sum ./
@@ -291,7 +287,7 @@ RUN go mod download
 COPY . .
 
 # 构建
-RUN go build -o bin/server cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/server cmd/server/main.go
 
 # 运行阶段
 FROM alpine:latest
@@ -299,7 +295,10 @@ FROM alpine:latest
 WORKDIR /app
 
 # 安装运行时依赖
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates tzdata
+
+# 设置时区
+ENV TZ=Asia/Shanghai
 
 # 复制二进制文件和配置
 COPY --from=builder /app/bin/server .
@@ -308,13 +307,17 @@ COPY --from=builder /app/config ./config
 # 暴露端口
 EXPOSE %d
 
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:%d/health || exit 1
+
 # 启动服务
 CMD ["./server"]
-`, config.Port)
+`, config.Port, config.HTTPPort)
 	return os.WriteFile(filepath.Join(serviceDir, "Dockerfile"), []byte(content), 0644)
 }
 
-func generateDockerCompose(serviceDir string, config *ServiceConfig) error {
+func generateProductionDockerCompose(serviceDir string, config *ServiceConfig) error {
 	var content string
 
 	switch config.DatabaseType {
@@ -322,90 +325,211 @@ func generateDockerCompose(serviceDir string, config *ServiceConfig) error {
 		content = fmt.Sprintf(`version: '3.8'
 
 services:
+  # %s 服务
+  %s:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uyou-%s
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: %s
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: %d
+    ports:
+      - "%d:%d"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - uyou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:%d/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   # PostgreSQL 数据库
   postgres:
     image: postgres:15-alpine
-    container_name: %s-postgres
+    container_name: uyou-%s-postgres
     environment:
       POSTGRES_DB: %s
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    networks:
+      - uyou-network
+    restart: unless-stopped
 
   # Redis 缓存
   redis:
     image: redis:7-alpine
-    container_name: %s-redis
-    ports:
-      - "6379:6379"
+    container_name: uyou-%s-redis
     volumes:
       - redis_data:/data
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+networks:
+  uyou-network:
+    driver: bridge
 
 volumes:
   postgres_data:
   redis_data:
-`, config.ServiceName, config.DatabaseName, config.ServiceName)
+`, 
+			config.ServiceTitle,
+			config.ServiceName,
+			config.ServiceName,
+			config.DatabaseName,
+			config.RedisDB,
+			config.Port,
+			config.Port,
+			config.HTTPPort,
+			config.ServiceName,
+			config.DatabaseName,
+			config.ServiceName,
+		)
 
 	case "mongodb":
 		content = fmt.Sprintf(`version: '3.8'
 
 services:
+  # %s 服务
+  %s:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uyou-%s
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-example}
+      MONGO_DATABASE: %s
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: %d
+    ports:
+      - "%d:%d"
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - uyou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:%d/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   # MongoDB 数据库
   mongodb:
     image: mongo:7
-    container_name: %s-mongodb
+    container_name: uyou-%s-mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-example}
       MONGO_INITDB_DATABASE: %s
-    ports:
-      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    networks:
+      - uyou-network
+    restart: unless-stopped
 
   # Redis 缓存
   redis:
     image: redis:7-alpine
-    container_name: %s-redis
-    ports:
-      - "6379:6379"
+    container_name: uyou-%s-redis
     volumes:
       - redis_data:/data
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+networks:
+  uyou-network:
+    driver: bridge
 
 volumes:
   mongodb_data:
   redis_data:
-`, config.ServiceName, config.DatabaseName, config.ServiceName)
+`, 
+			config.ServiceTitle,
+			config.ServiceName,
+			config.ServiceName,
+			config.DatabaseName,
+			config.RedisDB,
+			config.Port,
+			config.Port,
+			config.HTTPPort,
+			config.ServiceName,
+			config.DatabaseName,
+			config.ServiceName,
+		)
 
 	case "none":
 		content = fmt.Sprintf(`version: '3.8'
 
 services:
+  # %s 服务
+  %s:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uyou-%s
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: %d
+    ports:
+      - "%d:%d"
+    depends_on:
+      - redis
+    networks:
+      - uyou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:%d/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
   # Redis 缓存
   redis:
     image: redis:7-alpine
-    container_name: %s-redis
-    ports:
-      - "6379:6379"
+    container_name: uyou-%s-redis
     volumes:
       - redis_data:/data
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+networks:
+  uyou-network:
+    driver: bridge
 
 volumes:
   redis_data:
-`, config.ServiceName)
+`, 
+			config.ServiceTitle,
+			config.ServiceName,
+			config.ServiceName,
+			config.RedisDB,
+			config.Port,
+			config.Port,
+			config.HTTPPort,
+			config.ServiceName,
+		)
 	}
 
 	return os.WriteFile(filepath.Join(serviceDir, "docker-compose.yml"), []byte(content), 0644)
@@ -523,11 +647,17 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
+	// 启动健康检查 HTTP 服务器
+	go startHealthServer()
+
 	// 启动 gRPC 服务器
 	lis, err := net.Listen("tcp", ":%d")
 	if err != nil {
@@ -535,7 +665,13 @@ func main() {
 	}
 
 	s := grpc.NewServer()
-	// TODO: 注册服务
+	
+	// 注册健康检查服务
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	
+	// TODO: 注册业务服务
 	// pb.Register%sServiceServer(s, &server{})
 
 	fmt.Printf("🚀 %s Service 启动在端口 %d\n", config.Port)
@@ -543,7 +679,18 @@ func main() {
 		log.Fatalf("failed to serve: %%v", err)
 	}
 }
-`, config.Port, config.ServiceTitle, config.ServiceTitle)
+
+func startHealthServer() {
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	
+	if err := http.ListenAndServe(":%d", nil); err != nil {
+		log.Printf("Health server error: %%v", err)
+	}
+}
+`, config.Port, config.ServiceTitle, config.ServiceTitle, config.HTTPPort)
 	return os.WriteFile(filepath.Join(serviceDir, "cmd/server/main.go"), []byte(content), 0644)
 }
 
@@ -557,16 +704,16 @@ func generateConfig(serviceDir string, config *ServiceConfig) error {
   http_port: %d
 
 database:
-  host: localhost
-  port: 5432
-  user: postgres
-  password: postgres
-  dbname: %s
+  host: ${DB_HOST:localhost}
+  port: ${DB_PORT:5432}
+  user: ${DB_USER:postgres}
+  password: ${DB_PASSWORD:postgres}
+  dbname: ${DB_NAME:%s}
   sslmode: disable
 
 redis:
-  host: localhost
-  port: 6379
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
   db: %d
   password: ""
 
@@ -581,15 +728,15 @@ log:
   http_port: %d
 
 database:
-  host: localhost
-  port: 27017
-  user: root
-  password: example
-  dbname: %s
+  host: ${MONGO_HOST:localhost}
+  port: ${MONGO_PORT:27017}
+  user: ${MONGO_USER:root}
+  password: ${MONGO_PASSWORD:example}
+  dbname: ${MONGO_DATABASE:%s}
 
 redis:
-  host: localhost
-  port: 6379
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
   db: %d
   password: ""
 
@@ -604,8 +751,8 @@ log:
   http_port: %d
 
 redis:
-  host: localhost
-  port: 6379
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
   db: %d
   password: ""
 
@@ -655,22 +802,29 @@ go mod download
 make proto
 `+"```"+`
 
-### 3. 启动服务
+### 3. 本地开发
+
+在项目根目录启动开发环境:
 
 `+"```bash"+`
-# 启动数据库和 Redis
-make run
+cd ../../
+make start dev
 `+"```"+`
 
-服务将在以下端口启动:
-- gRPC: `+"`%d`"+`
-- HTTP: `+"`%d`"+` (健康检查)
-
-### 4. 测试
+### 4. 构建
 
 `+"```bash"+`
-# 使用 grpcurl 测试
-grpcurl -plaintext localhost:%d list
+make build
+`+"```"+`
+
+### 5. Docker 部署
+
+`+"```bash"+`
+# 构建镜像
+make docker-build
+
+# 启动服务(包含依赖)
+docker compose up -d
 `+"```"+`
 
 ## 项目结构
@@ -690,70 +844,10 @@ grpcurl -plaintext localhost:%d list
 ├── api/
 │   └── proto/           # Proto 定义
 ├── config/              # 配置文件
-├── docker-compose.yml   # 本地开发环境
+├── docker-compose.yml   # 生产环境配置
 ├── Dockerfile           # 容器镜像
 └── Makefile            # 构建命令
 `+"```"+`
-
-## 开发指南
-
-### 定义 API
-
-编辑 `+"`api/proto/%s.proto`"+`, 定义你的 gRPC 服务:
-
-`+"```protobuf"+`
-service %sService {
-  rpc YourMethod(YourRequest) returns (YourResponse);
-}
-`+"```"+`
-
-### 实现业务逻辑
-
-1. 在 `+"`internal/handler/`"+` 实现 gRPC 处理器
-2. 在 `+"`internal/service/`"+` 实现业务逻辑
-3. 在 `+"`internal/repository/`"+` 实现数据访问
-
-### 配置路由
-
-在项目根目录的 `+"`apisix/config/routes/`"+` 创建路由配置:
-
-`+"```yaml"+`
-# %s-routes.yaml
-routes:
-  - uri: /api/v1/%s/*
-    upstream:
-      nodes:
-        "%s-service:%d": 1
-      type: roundrobin
-    plugins:
-      grpc-transcode:
-        proto_id: "%s"
-        service: "%s.%sService"
-        method: "YourMethod"
-`+"```"+`
-
-然后同步到 APISIX:
-
-`+"```bash"+`
-cd ../../
-make update-routes
-`+"```"+`
-
-## 部署
-
-### Docker
-
-`+"```bash"+`
-# 构建镜像
-make docker-build
-
-# 运行
-make docker-run
-`+"```"+`
-
-### Kubernetes
-
-TODO: 添加 K8s 部署配置
 
 ## 环境变量
 
@@ -767,34 +861,27 @@ TODO: 添加 K8s 部署配置
 		dbSection,
 		config.Port,
 		config.HTTPPort,
-		config.Port,
-		config.ServiceName,
-		config.ServiceTitle,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceName,
-		config.Port,
-		config.ServiceName,
-		config.ServiceName,
-		config.ServiceTitle,
-		config.Port,
-		config.HTTPPort,
 	)
 
 	if config.DatabaseType == "postgres" {
 		content += fmt.Sprintf(`| DB_HOST | 数据库主机 | localhost |
 | DB_PORT | 数据库端口 | 5432 |
 | DB_NAME | 数据库名称 | %s |
+| DB_USER | 数据库用户 | postgres |
+| DB_PASSWORD | 数据库密码 | postgres |
 `, config.DatabaseName)
 	} else if config.DatabaseType == "mongodb" {
-		content += fmt.Sprintf(`| DB_HOST | 数据库主机 | localhost |
-| DB_PORT | 数据库端口 | 27017 |
-| DB_NAME | 数据库名称 | %s |
+		content += fmt.Sprintf(`| MONGO_HOST | 数据库主机 | localhost |
+| MONGO_PORT | 数据库端口 | 27017 |
+| MONGO_DATABASE | 数据库名称 | %s |
+| MONGO_USER | 数据库用户 | root |
+| MONGO_PASSWORD | 数据库密码 | example |
 `, config.DatabaseName)
 	}
 
 	content += `| REDIS_HOST | Redis 主机 | localhost |
 | REDIS_PORT | Redis 端口 | 6379 |
+| REDIS_DB | Redis DB | 0 |
 
 ## License
 
@@ -840,13 +927,98 @@ go.work
 	return os.WriteFile(filepath.Join(serviceDir, ".gitignore"), []byte(content), 0644)
 }
 
+func updateDevCompose(config *ServiceConfig) error {
+	// 读取现有的 docker-compose.dev.yml
+	cwd, _ := os.Getwd()
+	var devComposeFile string
+	if filepath.Base(cwd) == "scaffold" {
+		devComposeFile = "../docker-compose.dev.yml"
+	} else {
+		devComposeFile = "docker-compose.dev.yml"
+	}
+
+	content, err := os.ReadFile(devComposeFile)
+	if err != nil {
+		return err
+	}
+
+	contentStr := string(content)
+
+	// 检查服务是否已存在
+	if strings.Contains(contentStr, config.ServiceName+":") {
+		return nil // 服务已存在, 不重复添加
+	}
+
+	// 生成新服务的配置
+	var serviceConfig string
+	var dependsOn string
+
+	switch config.DatabaseType {
+	case "postgres":
+		dependsOn = `    depends_on:
+      - postgres
+      - redis`
+	case "mongodb":
+		dependsOn = `    depends_on:
+      - mongodb
+      - redis`
+	case "none":
+		dependsOn = `    depends_on:
+      - redis`
+	}
+
+	serviceConfig = fmt.Sprintf(`
+  # %s Service
+  %s:
+    build:
+      context: ./services/%s
+      dockerfile: Dockerfile
+    container_name: uyou-%s-dev
+    environment:`, config.ServiceTitle, config.ServiceName, config.ServiceName, config.ServiceName)
+
+	if config.DatabaseType == "postgres" {
+		serviceConfig += fmt.Sprintf(`
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: %s`, config.DatabaseName)
+	} else if config.DatabaseType == "mongodb" {
+		serviceConfig += fmt.Sprintf(`
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: example
+      MONGO_DATABASE: %s`, config.DatabaseName)
+	}
+
+	serviceConfig += fmt.Sprintf(`
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: %d
+    ports:
+      - "%d:%d"
+%s
+    networks:
+      - uyou-network
+    restart: unless-stopped
+`, config.RedisDB, config.Port, config.Port, dependsOn)
+
+	// 在 "# 新生成的微服务将自动添加到此处" 之前插入
+	marker := "  # 新生成的微服务将自动添加到此处"
+	contentStr = strings.Replace(contentStr, marker, serviceConfig+"\n"+marker, 1)
+
+	// 写回文件
+	return os.WriteFile(devComposeFile, []byte(contentStr), 0644)
+}
+
 func printNextSteps(config *ServiceConfig) {
 	fmt.Println()
 	fmt.Println("╔════════════════════════════════════════╗")
 	fmt.Println("║           后续步骤                     ║")
 	fmt.Println("╚════════════════════════════════════════╝")
 	fmt.Printf("1. 进入服务目录:\n")
-	fmt.Printf("   cd services/%s-service\n", config.ServiceName)
+	fmt.Printf("   cd services/%s\n", config.ServiceName)
 	fmt.Println()
 	fmt.Printf("2. 编辑 Proto 文件:\n")
 	fmt.Printf("   vim api/proto/%s.proto\n", config.ServiceName)
@@ -859,15 +1031,16 @@ func printNextSteps(config *ServiceConfig) {
 	fmt.Printf("   - internal/service/  (业务逻辑)\n")
 	fmt.Printf("   - internal/repository/ (数据访问)\n")
 	fmt.Println()
-	fmt.Printf("5. 启动服务(包含数据库):\n")
-	fmt.Printf("   make run\n")
+	fmt.Printf("5. 本地开发:\n")
+	fmt.Printf("   cd ../../\n")
+	fmt.Printf("   make start dev  # 启动所有开发环境服务\n")
 	fmt.Println()
 	fmt.Printf("6. 配置 APISIX 路由:\n")
-	fmt.Printf("   - 在 ../../apisix/config/routes/ 创建 %s-routes.yaml\n", config.ServiceName)
-	fmt.Printf("   - cd ../../ && make update-routes\n")
+	fmt.Printf("   - 在 apisix/config/routes/ 创建 %s-routes.yaml\n", config.ServiceName)
+	fmt.Printf("   - make update-routes\n")
 	fmt.Println()
 	fmt.Printf("7. 测试 API:\n")
 	fmt.Printf("   curl http://localhost:9080/api/v1/%s/...\n", config.ServiceName)
 	fmt.Println()
-	fmt.Println("📖 详细文档: README.md")
+	fmt.Println("📖 详细文档: services/%s/README.md", config.ServiceName)
 }

@@ -8,29 +8,31 @@
 
 ## ✨ 核心特性
 
-- **🚀 纯净的框架**: 移除了所有业务示例代码, 只保留核心框架, 让你从零开始构建自己的应用。
+- **🚀 生产与开发环境分离**: 
+  - `docker-compose.yml`: 只包含 APISIX 和 etcd, 用于生产环境。
+  - `docker-compose.dev.yml`: 包含所有开发所需服务 (数据库, 缓存, 网关), 实现本地一键启动。
 - **⚡️ 自动化服务创建**: 通过 `make new-service` 命令, 交互式生成完整的微服务脚手架, 包括:
-  - 标准化的 Go 项目结构
-  - gRPC 服务与 API 定义
-  - 数据库选择 (PostgreSQL / MongoDB / None)
-  - **独立的 Docker Compose 环境**, 实现一键启动开发
+  - 标准化的 Go 项目结构 (服务目录名不带 `-service` 后缀)。
+  - gRPC 服务与 API 定义。
+  - 数据库选择 (PostgreSQL / MongoDB / None)。
+  - **生产级的 Dockerfile 和 docker-compose.yml**。
+  - **自动将新服务添加到 `docker-compose.dev.yml`** 中, 方便本地联调。
 - **🔌 动态路由管理**: 基于 APISIX 的动态配置, 通过简单的 YAML 文件管理路由, 无需重启网关。
-- **🔧 生产级基础设施**: 包含 APISIX, etcd, Redis, 提供高性能、高可用的网关服务。
-- **📚 清晰的文档**: 提供从快速入门到生产部署的完整指南。
+- **🔧 简化的开发命令**: 通过 `make start dev`, `make logs dev` 等命令轻松管理本地开发环境。
 
 ---
 
 ## 🏁 5 分钟快速开始
 
-### 1. 启动基础设施
+### 1. 启动开发环境
 
 ```bash
 # 克隆项目
 git clone https://github.com/yeegeek/uyou-api-gateway.git
 cd uyou-api-gateway
 
-# 启动 APISIX, etcd, Redis
-make start
+# 启动开发环境 (APISIX, etcd, Redis, PostgreSQL, MongoDB)
+make start dev
 ```
 
 ### 2. 创建你的第一个微服务
@@ -40,37 +42,25 @@ make start
 make new-service
 
 # --- 按照提示输入 ---
-# 服务名称 (如 user, order, product) [user]: user
+# 服务名称 (如 chat, user, order) [chat]: user
 # Go 模块路径 [github.com/yeegeek/uyou-user-service]: 
 # gRPC 端口 [50051]: 
 # 选择数据库类型 [1/2/3]: 1
-# 数据库名称 [userdb]: 
-# 主表名称 [users]: 
 # ... 确认生成
 ```
 
-这将在 `services/user-service` 目录下创建一个全新的微服务。
+这将在 `services/user` 目录下创建一个全新的微服务, 并自动将其添加到 `docker-compose.dev.yml`。
 
-### 3. 启动新服务进行开发
+### 3. 重启开发环境以包含新服务
 
 ```bash
-# 进入服务目录
-cd services/user-service
-
-# 启动服务及其依赖的数据库 (由生成器自动创建的 docker-compose.yml)
-make run
+# 在项目根目录运行
+make restart dev
 ```
 
 ### 4. 配置 API 路由
 
-回到项目根目录, 创建一个路由配置文件:
-
-```bash
-# 编辑 apisix/config/routes/user-routes.yaml
-vi apisix/config/routes/user-routes.yaml
-```
-
-粘贴以下内容:
+创建一个路由配置文件 `apisix/config/routes/user-routes.yaml`:
 
 ```yaml
 routes:
@@ -83,7 +73,7 @@ routes:
         method: "Create"
     upstream:
       nodes:
-        "user-service:50051": 1
+        "user:50051": 1 # 服务名:端口
       type: roundrobin
       scheme: grpc
 
@@ -93,7 +83,7 @@ stream_routes:
     server_port: 50051
     upstream:
       nodes:
-        "user-service:50051": 1
+        "user:50051": 1
       type: roundrobin
       scheme: grpc
 ```
@@ -113,7 +103,7 @@ curl -i -X POST http://localhost:9080/api/v1/users/register \
   -d '{"name": "test"}'
 ```
 
-你将看到来自 `user-service` 的响应!
+你将看到来自 `user` 服务的响应!
 
 ---
 
@@ -129,5 +119,7 @@ curl -i -X POST http://localhost:9080/api/v1/users/register \
 欢迎提交 PR 和 Issue, 共同完善这个框架。
 
 ## License
+
+MIT
 
 MIT
