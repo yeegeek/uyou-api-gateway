@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   # ==================== 配置中心 ====================
-  
+
   # etcd - APISIX 动态配置存储
   etcd:
     image: quay.io/coreos/etcd:v3.5.10
@@ -18,7 +16,7 @@ services:
     volumes:
       - etcd_data:/etcd-data
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
+      test: [ "CMD", "etcdctl", "endpoint", "health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +24,7 @@ services:
       - uyou-network
 
   # ==================== 数据库 ====================
-  
+
   # PostgreSQL 数据库
   postgres:
     image: postgres:15-alpine
@@ -39,7 +37,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -58,7 +56,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,7 +64,7 @@ services:
       - uyou-network
 
   # ==================== 缓存服务 ====================
-  
+
   # Redis 缓存
   redis:
     image: redis:7-alpine
@@ -76,7 +74,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -84,7 +82,7 @@ services:
       - uyou-network
 
   # ==================== API 网关 ====================
-  
+
   # Apache APISIX
   apisix:
     image: apache/apisix:3.8.0-debian
@@ -92,17 +90,17 @@ services:
     volumes:
       - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
     ports:
-      - "9080:9080"   # HTTP Gateway
-      - "9443:9443"   # HTTPS Gateway
-      - "9180:9180"   # Admin API
+      - "9080:9080" # HTTP Gateway
+      - "9443:9443" # HTTPS Gateway
+      - "9180:9180" # Admin API
     depends_on:
       etcd:
         condition: service_healthy
     networks:
       - uyou-network
     restart: unless-stopped
-
   # ==================== 微服务 ====================
+
 
   # User Service
   user:
@@ -118,7 +116,7 @@ services:
       DB_NAME: userdb
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_DB: 1
+      REDIS_DB: 0
     ports:
       - "50051:50051"
     depends_on:
@@ -127,7 +125,6 @@ services:
     networks:
       - uyou-network
     restart: unless-stopped
-
   # 新生成的微服务将自动添加到此处
 
 networks:

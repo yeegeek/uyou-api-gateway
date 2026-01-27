@@ -310,7 +310,7 @@ main() {
                 echo "找到 ${sname} 的 proto: ${pfile} (ID: ${pid})"
                 cp "$pfile" "${PROTOS_ARCHIVE_DIR}/${sname}.proto"
                 create_proto "$pid" "$pfile"
-                [ ! -f "${ROUTES_DIR}/${sname}-routes.yaml" ] && generate_default_routes "$sname" "$pid" "$pfile" "${ROUTES_DIR}/${sname}-routes.yaml"
+                generate_default_routes "$sname" "$pid" "$pfile" "${ROUTES_DIR}/${sname}-routes.yaml"
             fi
         done
     fi
@@ -339,7 +339,10 @@ main() {
     done
 
     echo -e "\n${YELLOW}导出合并后的配置至 apisix.yaml...${NC}"
-    yq eval -n ".routes = load(\"$temp_json\") | .[\"# generated_at\"] = \"$(date)\"" > "${CONFIG_DIR}/apisix.yaml"
+    echo "# 自动生成的 APISIX 配置文件" > "${CONFIG_DIR}/apisix.yaml"
+    echo "# generated_at: $(date)" >> "${CONFIG_DIR}/apisix.yaml"
+    echo "" >> "${CONFIG_DIR}/apisix.yaml"
+    yq eval-all -P '. as $item ireduce ({"routes": []}; .routes += $item.routes)' "${ROUTES_DIR}"/*.yaml >> "${CONFIG_DIR}/apisix.yaml"
     echo -e "  ${GREEN}✓ 导出成功${NC}"
     rm -f "$temp_json"
 

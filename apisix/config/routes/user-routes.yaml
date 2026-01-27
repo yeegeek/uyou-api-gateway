@@ -1,4 +1,4 @@
-# 自动生成的路由配置 - Tue Jan 27 09:47:00 CST 2026
+# 自动生成的路由配置 - Tue Jan 27 12:16:50 CST 2026
 # 源文件: /Users/sam/Projects/2026/uyou-api-gateway/services/user/api/proto/user.proto
 routes:
   - id: "user_create"
@@ -6,10 +6,9 @@ routes:
     uri: /api/v1/users
     methods: ["POST"]
     plugins:
-      jwt-auth: {}
       limit-req:
-        rate: 2
-        burst: 5
+        rate: 5
+        burst: 10
         key: "remote_addr"
         rejected_code: 429
       grpc-transcode:
@@ -40,7 +39,6 @@ routes:
     uri: /api/v1/users/*
     methods: ["PUT"]
     plugins:
-      jwt-auth: {}
       grpc-transcode:
         proto_id: "1"
         service: "user.UserService"
@@ -55,7 +53,6 @@ routes:
     uri: /api/v1/users/*
     methods: ["DELETE"]
     plugins:
-      jwt-auth: {}
       grpc-transcode:
         proto_id: "1"
         service: "user.UserService"
@@ -70,7 +67,6 @@ routes:
     uri: /api/v1/users
     methods: ["GET"]
     plugins:
-      jwt-auth: {}
       grpc-transcode:
         proto_id: "1"
         service: "user.UserService"

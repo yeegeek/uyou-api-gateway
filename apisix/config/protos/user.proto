@@ -7,23 +7,19 @@ option go_package = "github.com/yeegeek/uyou-user-service/api/proto";
 // User Service
 service UserService {
   // 创建User
-  // @auth
-  // @limit(rate=2, burst=5)
+  // @limit(rate=5, burst=10)
   rpc Create(CreateUserRequest) returns (CreateUserResponse);
   
   // 获取User
   rpc Get(GetUserRequest) returns (GetUserResponse);
   
   // 更新User
-  // @auth
   rpc Update(UpdateUserRequest) returns (UpdateUserResponse);
   
   // 删除User
-  // @auth
   rpc Delete(DeleteUserRequest) returns (DeleteUserResponse);
   
   // 列表User
-  // @auth
   rpc List(ListUserRequest) returns (ListUserResponse);
 }
 

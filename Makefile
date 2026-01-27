@@ -12,6 +12,10 @@ else
 	ENV_SUFFIX := (生产环境)
 endif
 
+# APISIX 相关配置
+APISIX_ADMIN_URL ?= http://localhost:9180
+APISIX_ADMIN_KEY ?= edd1c9f034335f136f87ad84b625c8f1
+
 # ==================== 基础设施管理 ====================
 
 ## start: 启动服务 (使用 'make start dev' 启动开发环境)
@@ -104,6 +108,28 @@ validate:
 	@echo "🔍 验证配置文件..."
 	@./scripts/validate-config.sh
 
+## apisix-status: 查看 APISIX 当前生效的配置 (Routes, Consumers, Global Rules)
+apisix-status:
+	@echo "📊 APISIX 当前配置:"
+	@echo "--- 路由 (Routes) ---"
+	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/routes -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"id":|"uri":|"name":' || echo "无"
+	@echo "\n--- 消费者 (Consumers) ---"
+	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/consumers -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"username":' || echo "无"
+	@echo "\n--- 全局规则 (Global Rules) ---"
+	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/global_rules -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"id":' || echo "无"
+
+## apisix-clear: 清空 APISIX 所有配置 (危险操作)
+apisix-clear:
+	@echo "⚠️  正在清空 APISIX 所有配置..."
+	@for resource in routes consumers global_rules protos; do \
+		echo "清理 $$resource ..."; \
+		items=$$(curl -s $(APISIX_ADMIN_URL)/apisix/admin/$$resource -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -c "import sys, json; data=json.load(sys.stdin); print(' '.join([str(i.get('value', {}).get('id') or i.get('value', {}).get('username')) for i in data.get('list', []) if i.get('value')]))" 2>/dev/null); \
+		for id in $$items; do \
+			curl -s -X DELETE $(APISIX_ADMIN_URL)/apisix/admin/$$resource/$$id -H "X-API-KEY: $(APISIX_ADMIN_KEY)" > /dev/null; \
+		done; \
+	done
+	@echo "✅ APISIX 已重置为初始状态！"
+
 # ==================== 工具命令 ====================
 
 ## help: 显示帮助信息
@@ -125,6 +151,8 @@ help:
 	@echo "  make update-routes    构建并更新 APISIX 路由配置"
 	@echo "  make deploy-routes    仅部署现有配置 (生产环境)"
 	@echo "  make validate         验证配置文件"
+	@echo "  make apisix-status    查看 APISIX 当前生效的配置"
+	@echo "  make apisix-clear     清空 APISIX 所有配置 (危险)"
 	@echo ""
 	@echo "工具命令:"
 	@echo "  make help             显示此帮助信息"
