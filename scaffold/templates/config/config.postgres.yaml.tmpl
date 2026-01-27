@@ -16,6 +16,13 @@ redis:
   db: {{REDIS_DB}}
   password: ""
 
+rabbitmq:
+  host: rabbitmq
+  port: 5672
+  user: uyou
+  password: uyou123
+  vhost: uyou
+
 jwt:
   # JWT Secret - 优先从环境变量 JWT_SECRET 读取
   # 如果环境变量不存在，则使用此值（仅用于开发环境）

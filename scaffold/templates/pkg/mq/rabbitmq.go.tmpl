@@ -1,0 +1,195 @@
+package mq
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// RabbitMQ 封装 RabbitMQ 连接管理
+type RabbitMQ struct {
+	conn    *amqp.Connection
+	channel *amqp.Channel
+	url     string
+	log     *logger.Logger
+	mu      sync.RWMutex
+	closed  bool
+
+	// 重连相关
+	reconnectDelay time.Duration
+	maxRetries     int
+}
+
+// Config RabbitMQ 配置
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	VHost    string
+}
+
+// New 创建 RabbitMQ 连接
+func New(cfg *Config, log *logger.Logger) (*RabbitMQ, error) {
+	url := fmt.Sprintf("amqp://%s:%s@%s:%d/%s",
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.VHost)
+
+	mq := &RabbitMQ{
+		url:            url,
+		log:            log,
+		reconnectDelay: 5 * time.Second,
+		maxRetries:     10,
+	}
+
+	if err := mq.connect(); err != nil {
+		return nil, err
+	}
+
+	// 启动重连监控
+	go mq.handleReconnect()
+
+	return mq, nil
+}
+
+// connect 建立连接
+func (r *RabbitMQ) connect() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	conn, err := amqp.Dial(r.url)
+	if err != nil {
+		return fmt.Errorf("failed to connect to RabbitMQ: %w", err)
+	}
+
+	channel, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("failed to open channel: %w", err)
+	}
+
+	r.conn = conn
+	r.channel = channel
+	r.log.Info("🐰 Connected to RabbitMQ")
+
+	return nil
+}
+
+// handleReconnect 处理断线重连
+func (r *RabbitMQ) handleReconnect() {
+	for {
+		r.mu.RLock()
+		if r.closed {
+			r.mu.RUnlock()
+			return
+		}
+		conn := r.conn
+		r.mu.RUnlock()
+
+		if conn == nil {
+			time.Sleep(r.reconnectDelay)
+			continue
+		}
+
+		// 监听连接关闭事件
+		notifyClose := conn.NotifyClose(make(chan *amqp.Error, 1))
+
+		select {
+		case err := <-notifyClose:
+			if err != nil {
+				r.log.Warn("RabbitMQ connection closed", logger.Error(err))
+			}
+
+			r.mu.RLock()
+			if r.closed {
+				r.mu.RUnlock()
+				return
+			}
+			r.mu.RUnlock()
+
+			// 尝试重连
+			for i := 0; i < r.maxRetries; i++ {
+				r.log.Info("Attempting to reconnect to RabbitMQ",
+					logger.Int("attempt", i+1),
+					logger.Int("max_retries", r.maxRetries))
+
+				if err := r.connect(); err != nil {
+					r.log.Error("Failed to reconnect", logger.Error(err))
+					time.Sleep(r.reconnectDelay)
+					continue
+				}
+				break
+			}
+		}
+	}
+}
+
+// Channel 获取 channel（线程安全）
+func (r *RabbitMQ) Channel() *amqp.Channel {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.channel
+}
+
+// DeclareExchange 声明交换机
+func (r *RabbitMQ) DeclareExchange(name, kind string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.channel.ExchangeDeclare(
+		name,  // 交换机名称
+		kind,  // 类型: direct, fanout, topic, headers
+		true,  // durable
+		false, // auto-deleted
+		false, // internal
+		false, // no-wait
+		nil,   // arguments
+	)
+}
+
+// DeclareQueue 声明队列
+func (r *RabbitMQ) DeclareQueue(name string) (amqp.Queue, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.channel.QueueDeclare(
+		name,  // 队列名称
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+}
+
+// BindQueue 绑定队列到交换机
+func (r *RabbitMQ) BindQueue(queueName, routingKey, exchangeName string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.channel.QueueBind(
+		queueName,    // 队列名称
+		routingKey,   // routing key
+		exchangeName, // 交换机名称
+		false,        // no-wait
+		nil,          // arguments
+	)
+}
+
+// Close 关闭连接
+func (r *RabbitMQ) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.closed = true
+
+	if r.channel != nil {
+		r.channel.Close()
+	}
+	if r.conn != nil {
+		return r.conn.Close()
+	}
+	return nil
+}

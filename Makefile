@@ -35,6 +35,7 @@ start:
 	@echo "   • API Gateway:  http://localhost:9080"
 	@echo "   • Admin API:    http://localhost:9180"
 	@echo "   • etcd:         http://localhost:2379"
+	@echo "   • RabbitMQ:     http://localhost:15672"
 ifeq ($(filter dev,$(MAKECMDGOALS)),dev)
 	@echo "   • PostgreSQL:   localhost:5432"
 	@echo "   • MongoDB:      localhost:27017"

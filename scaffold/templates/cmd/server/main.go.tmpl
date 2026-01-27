@@ -18,6 +18,8 @@ import (
 	"{{MODULE_PATH}}/internal/app"
 	"{{MODULE_PATH}}/pkg/conf"
 	"{{MODULE_PATH}}/pkg/logger"
+	"{{MODULE_PATH}}/pkg/mq"
+	"{{MODULE_PATH}}/pkg/scheduler"
 	_ "{{MODULE_PATH}}/pkg/metrics" // 初始化 Prometheus 指标
 )
 
@@ -28,16 +30,46 @@ func main() {
 	// 2. 初始化日志
 	log := logger.New(c.Log.Level, c.Log.Format)
 
-	// 3. 构造应用实例
-	application, err := app.New(c, log)
+	// 3. 初始化 RabbitMQ
+	rabbitMQ, err := mq.New(&mq.Config{
+		Host:     c.RabbitMQ.Host,
+		Port:     c.RabbitMQ.Port,
+		User:     c.RabbitMQ.User,
+		Password: c.RabbitMQ.Password,
+		VHost:    c.RabbitMQ.VHost,
+	}, log)
+	if err != nil {
+		log.Fatal("failed to connect to RabbitMQ", logger.Error(err))
+	}
+
+	// 4. 初始化事件总线
+	eventBus, err := mq.NewEventBus(rabbitMQ, "{{SERVICE_NAME}}", log)
+	if err != nil {
+		log.Fatal("failed to create event bus", logger.Error(err))
+	}
+
+	// 5. 初始化定时任务调度器
+	sched := scheduler.New(log)
+
+	// 6. 构造应用实例
+	application, err := app.New(c, log, eventBus, sched)
 	if err != nil {
 		log.Fatal("failed to initialize application", logger.Error(err))
 	}
 
-	// 4. 启动健康检查 HTTP 服务器
+	// 7. 启动事件消费者
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := eventBus.StartConsuming(ctx); err != nil {
+		log.Fatal("failed to start event consuming", logger.Error(err))
+	}
+
+	// 8. 启动定时任务调度器
+	sched.Start()
+
+	// 9. 启动健康检查 HTTP 服务器
 	healthServer := startHealthServer(c.Server.HTTPPort, log)
 
-	// 5. 启动 gRPC 服务器
+	// 10. 启动 gRPC 服务器
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", c.Server.GRPCPort))
 	if err != nil {
 		log.Fatal("failed to listen", logger.Int("port", c.Server.GRPCPort), logger.Error(err))
@@ -66,15 +98,24 @@ func main() {
 		// 设置健康检查为不健康状态
 		grpcHealthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 		
+		// 停止事件消费
+		cancel()
+		
+		// 停止定时任务
+		<-sched.Stop().Done()
+		
+		// 关闭 RabbitMQ 连接
+		rabbitMQ.Close()
+		
 		// 优雅关闭 gRPC 服务器
 		go func() {
 			s.GracefulStop()
 		}()
 		
 		// 优雅关闭健康检查 HTTP 服务器
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := healthServer.Shutdown(ctx); err != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := healthServer.Shutdown(shutdownCtx); err != nil {
 			log.Error("failed to shutdown health server", logger.Error(err))
 		}
 		

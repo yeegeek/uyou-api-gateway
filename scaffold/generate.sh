@@ -208,7 +208,7 @@ generate_service() {
     print_info "📁 创建目录: $SERVICE_DIR"
     
     # 创建目录结构
-    mkdir -p "$SERVICE_DIR"/{cmd/server,internal/{app,delivery,logic,repository,model},pkg/{conf,logger,errno,middleware,ctxout},api/proto,config}
+    mkdir -p "$SERVICE_DIR"/{cmd/server,internal/{app,delivery,logic,repository,model},pkg/{conf,logger,errno,middleware,ctxout,mq,scheduler},api/proto,config}
     
     print_info "📝 生成文件..."
     
@@ -242,6 +242,9 @@ generate_service() {
     copy_template "$TEMPLATES_DIR/pkg/middleware/interceptors.go.tmpl" "$SERVICE_DIR/pkg/middleware/interceptors.go"
     copy_template "$TEMPLATES_DIR/pkg/middleware/auth_parser.go.tmpl" "$SERVICE_DIR/pkg/middleware/auth_parser.go"
     copy_template "$TEMPLATES_DIR/pkg/metrics/metrics.go.tmpl" "$SERVICE_DIR/pkg/metrics/metrics.go"
+    copy_template "$TEMPLATES_DIR/pkg/mq/rabbitmq.go.tmpl" "$SERVICE_DIR/pkg/mq/rabbitmq.go"
+    copy_template "$TEMPLATES_DIR/pkg/mq/events.go.tmpl" "$SERVICE_DIR/pkg/mq/events.go"
+    copy_template "$TEMPLATES_DIR/pkg/scheduler/scheduler.go.tmpl" "$SERVICE_DIR/pkg/scheduler/scheduler.go"
     
     # 复制 internal 模板
     copy_template "$TEMPLATES_DIR/internal/app/app.go.tmpl" "$SERVICE_DIR/internal/app/app.go"
@@ -330,22 +333,31 @@ update_dev_compose() {
         echo "      REDIS_HOST: redis"
         echo "      REDIS_PORT: 6379"
         echo "      REDIS_DB: ${REDIS_DB}"
+        echo "      RABBITMQ_HOST: rabbitmq"
+        echo "      RABBITMQ_PORT: \${RABBITMQ_PORT:-5672}"
+        echo "      RABBITMQ_USER: \${RABBITMQ_USER:-uyou}"
+        echo "      RABBITMQ_PASSWORD: \${RABBITMQ_PASSWORD:-uyou123}"
+        echo "      RABBITMQ_VHOST: \${RABBITMQ_VHOST:-uyou}"
         echo "      JWT_SECRET: \${JWT_SECRET:-uyou_secret_key_2026}"
         echo "    ports:"
         echo "      - \"${GRPC_PORT}:${GRPC_PORT}\""
+        echo "      - \"$((GRPC_PORT + 1000)):$((GRPC_PORT + 1000))\""
         echo "    depends_on:"
         
         case "$DB_TYPE" in
             postgres)
                 echo "      - postgres"
                 echo "      - redis"
+                echo "      - rabbitmq"
                 ;;
             mongodb)
                 echo "      - mongodb"
                 echo "      - redis"
+                echo "      - rabbitmq"
                 ;;
             *)
                 echo "      - redis"
+                echo "      - rabbitmq"
                 ;;
         esac
         

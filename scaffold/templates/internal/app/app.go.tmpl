@@ -1,12 +1,15 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
 
 	"google.golang.org/grpc"
 	"{{MODULE_PATH}}/pkg/conf"
 	"{{MODULE_PATH}}/pkg/logger"
 	"{{MODULE_PATH}}/pkg/middleware"
+	"{{MODULE_PATH}}/pkg/mq"
+	"{{MODULE_PATH}}/pkg/scheduler"
 	"{{MODULE_PATH}}/internal/delivery"
 	"{{MODULE_PATH}}/internal/logic"
 	"{{MODULE_PATH}}/internal/repository"
@@ -14,12 +17,14 @@ import (
 )
 
 type App struct {
-	conf   *conf.Config
-	log    *logger.Logger
-	logic  *logic.Logic
+	conf      *conf.Config
+	log       *logger.Logger
+	logic     *logic.Logic
+	eventBus  *mq.EventBus
+	scheduler *scheduler.Scheduler
 }
 
-func New(c *conf.Config, l *logger.Logger) (*App, error) {
+func New(c *conf.Config, l *logger.Logger, eb *mq.EventBus, sched *scheduler.Scheduler) (*App, error) {
 	// 1. 解析 proto 文件，注册需要认证的方法
 	protoDir := filepath.Join(".", "api", "proto")
 	if err := middleware.ParseProtoForAuth(protoDir, "{{SERVICE_NAME}}"); err != nil {
@@ -36,11 +41,91 @@ func New(c *conf.Config, l *logger.Logger) (*App, error) {
 	// 3. 初始化 Logic
 	lgc := logic.New(c, l, repo)
 
-	return &App{
-		conf:  c,
-		log:   l,
-		logic: lgc,
-	}, nil
+	app := &App{
+		conf:      c,
+		log:       l,
+		logic:     lgc,
+		eventBus:  eb,
+		scheduler: sched,
+	}
+
+	// 4. 注册事件处理器
+	if err := app.registerEventHandlers(); err != nil {
+		return nil, err
+	}
+
+	// 5. 注册定时任务
+	if err := app.registerScheduledJobs(); err != nil {
+		return nil, err
+	}
+
+	return app, nil
+}
+
+// registerEventHandlers 注册事件处理器
+func (a *App) registerEventHandlers() error {
+	// 示例：订阅用户相关事件
+	// 你可以根据业务需求修改或添加更多事件处理器
+	
+	// 订阅所有 user.* 事件
+	// if err := a.eventBus.Subscribe("user.*", a.handleUserEvent); err != nil {
+	// 	return err
+	// }
+	
+	// 订阅特定事件
+	// if err := a.eventBus.Subscribe("user.blacklist.updated", a.handleBlacklistUpdated); err != nil {
+	// 	return err
+	// }
+	
+	return nil
+}
+
+// registerScheduledJobs 注册定时任务
+func (a *App) registerScheduledJobs() error {
+	// 示例：每5分钟执行一次的定时任务
+	// 你可以根据业务需求修改或添加更多定时任务
+	
+	// err := a.scheduler.AddJob(scheduler.Job{
+	// 	Name:     "cleanup-expired-cache",
+	// 	Schedule: "0 */5 * * * *", // 每5分钟
+	// 	Func:     a.cleanupExpiredCache,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
+	
+	return nil
+}
+
+// handleUserEvent 处理用户事件示例
+func (a *App) handleUserEvent(ctx context.Context, event *mq.Event) error {
+	a.log.Info("Received user event",
+		logger.String("type", event.Type),
+		logger.String("id", event.ID),
+		logger.String("source", event.Source))
+	
+	// 根据事件类型处理
+	switch event.Type {
+	case "user.blacklist.updated":
+		// 处理黑名单更新事件
+		// 例如：清除相关缓存
+	case "user.profile.updated":
+		// 处理用户资料更新事件
+	}
+	
+	return nil
+}
+
+// cleanupExpiredCache 清理过期缓存示例
+func (a *App) cleanupExpiredCache(ctx context.Context) error {
+	a.log.Info("Running scheduled job: cleanup expired cache")
+	// 实现缓存清理逻辑
+	return nil
+}
+
+// PublishEvent 发布事件的便捷方法（供 Logic 层调用）
+func (a *App) PublishEvent(ctx context.Context, eventType string, data interface{}) error {
+	return a.eventBus.Publish(ctx, eventType, data)
 }
 
 func (a *App) RegisterServers(s *grpc.Server) {

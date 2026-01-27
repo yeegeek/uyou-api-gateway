@@ -1,0 +1,123 @@
+package scheduler
+
+import (
+	"context"
+	"sync"
+
+	"github.com/robfig/cron/v3"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// Scheduler 定时任务调度器
+type Scheduler struct {
+	cron *cron.Cron
+	log  *logger.Logger
+	jobs map[string]cron.EntryID
+	mu   sync.RWMutex
+}
+
+// Job 定时任务定义
+type Job struct {
+	Name     string           // 任务名称
+	Schedule string           // cron 表达式
+	Func     func(ctx context.Context) error // 任务函数
+}
+
+// New 创建调度器
+func New(log *logger.Logger) *Scheduler {
+	return &Scheduler{
+		cron: cron.New(cron.WithSeconds()), // 支持秒级调度
+		log:  log,
+		jobs: make(map[string]cron.EntryID),
+	}
+}
+
+// AddJob 添加定时任务
+//
+// schedule: cron 表达式（支持秒）
+//   - "0 */5 * * * *"   每5分钟执行
+//   - "0 0 * * * *"     每小时执行
+//   - "0 0 0 * * *"     每天0点执行
+//   - "0 0 0 * * 1"     每周一0点执行
+//   - "@every 30s"      每30秒执行
+//   - "@hourly"         每小时执行
+//   - "@daily"          每天执行
+func (s *Scheduler) AddJob(job Job) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 包装任务函数，添加日志和错误处理
+	wrappedFunc := func() {
+		s.log.Debug("Job started", logger.String("name", job.Name))
+		
+		ctx := context.Background()
+		if err := job.Func(ctx); err != nil {
+			s.log.Error("Job failed",
+				logger.String("name", job.Name),
+				logger.Error(err))
+			return
+		}
+		
+		s.log.Debug("Job completed", logger.String("name", job.Name))
+	}
+
+	entryID, err := s.cron.AddFunc(job.Schedule, wrappedFunc)
+	if err != nil {
+		return err
+	}
+
+	s.jobs[job.Name] = entryID
+	s.log.Info("Job registered",
+		logger.String("name", job.Name),
+		logger.String("schedule", job.Schedule))
+
+	return nil
+}
+
+// RemoveJob 移除定时任务
+func (s *Scheduler) RemoveJob(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if entryID, ok := s.jobs[name]; ok {
+		s.cron.Remove(entryID)
+		delete(s.jobs, name)
+		s.log.Info("Job removed", logger.String("name", name))
+	}
+}
+
+// Start 启动调度器
+func (s *Scheduler) Start() {
+	s.cron.Start()
+	s.log.Info("⏰ Scheduler started", logger.Int("jobs", len(s.jobs)))
+}
+
+// Stop 停止调度器
+func (s *Scheduler) Stop() context.Context {
+	s.log.Info("Scheduler stopping...")
+	return s.cron.Stop()
+}
+
+// ListJobs 列出所有任务
+func (s *Scheduler) ListJobs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	names := make([]string, 0, len(s.jobs))
+	for name := range s.jobs {
+		names = append(names, name)
+	}
+	return names
+}
+
+// GetNextRun 获取任务下次执行时间
+func (s *Scheduler) GetNextRun(name string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if entryID, ok := s.jobs[name]; ok {
+		entry := s.cron.Entry(entryID)
+		return entry.Next.Format("2006-01-02 15:04:05"), true
+	}
+	return "", false
+}

@@ -1,4 +1,29 @@
 services:
+  # ==================== 消息队列 ====================
+
+  # RabbitMQ - 消息队列
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: uyou-rabbitmq
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-uyou}
+    ports:
+      - "5672:5672"   # AMQP 协议端口
+      - "15672:15672" # 管理界面端口
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uyou-network
+
   # ==================== 配置中心 ====================
 
   # etcd - APISIX 动态配置存储
@@ -48,3 +73,4 @@ networks:
 
 volumes:
   etcd_data:
+  rabbitmq_data:
