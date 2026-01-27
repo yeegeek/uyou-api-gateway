@@ -1,0 +1,34 @@
+package ctxout
+
+import (
+	"context"
+
+	"google.golang.org/grpc/metadata"
+)
+
+const (
+	// KeyUserID is the key for user ID in context
+	KeyUserID = "x-user-id"
+)
+
+// GetUserID extracts the user ID from the context.
+// It checks both the incoming context metadata (gRPC headers) and values attached to the context.
+func GetUserID(ctx context.Context) string {
+	// 1. Try to get from metadata (incoming gRPC header)
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		vals := md.Get(KeyUserID)
+		if len(vals) > 0 && vals[0] != "" {
+			return vals[0]
+		}
+	}
+
+	// 2. Try to get from context value (set by middleware)
+	if v := ctx.Value(KeyUserID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+
+	return ""
+}

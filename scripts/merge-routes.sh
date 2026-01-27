@@ -203,12 +203,14 @@ EOF
         local uri_suffix="/${method_name}"
         local uri_base="/api/v1/${service_name}s"
         
+        # 是否需要路径参数 (Get/Update/Delete 需要 :id)
+        local needs_path_param="false"
         case "$method_name" in
-            Get*)    http_method="GET";    uri_suffix="/*" ;;
+            Get*)    http_method="GET";    uri_suffix="/:id"; needs_path_param="true" ;;
             List*)   http_method="GET";    uri_suffix=""   ;;
             Create*) http_method="POST";   uri_suffix=""   ;;
-            Update*) http_method="PUT";    uri_suffix="/*" ;;
-            Delete*) http_method="DELETE"; uri_suffix="/*" ;;
+            Update*) http_method="PUT";    uri_suffix="/:id"; needs_path_param="true" ;;
+            Delete*) http_method="DELETE"; uri_suffix="/:id"; needs_path_param="true" ;;
         esac
         
         local full_uri=$(echo "${uri_base}${uri_suffix}" | sed 's/\/$//')
@@ -230,6 +232,15 @@ EOF
         key: "remote_addr"
         rejected_code: 429
 EOF
+        fi
+        # 为需要路径参数的路由添加 serverless-pre-function
+        if [ "$needs_path_param" = "true" ]; then
+            cat >> "$output_file" <<'SERVERLESS_EOF'
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function(conf, ctx) local id = ctx.curr_req_matched and ctx.curr_req_matched.id; if id then ngx.req.set_uri_args({id = id}) end end"
+SERVERLESS_EOF
         fi
         cat >> "$output_file" <<EOF
       grpc-transcode:

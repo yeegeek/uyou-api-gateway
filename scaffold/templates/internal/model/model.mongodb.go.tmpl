@@ -1,0 +1,24 @@
+package model
+
+import (
+	"time"
+
+	pb "{{MODULE_PATH}}/api/proto"
+)
+
+// {{SERVICE_TITLE}} 数据库模型示例 (MongoDB)
+type {{SERVICE_TITLE}} struct {
+	ID        int64     `bson:"_id,omitempty" json:"id"`
+	Name      string    `bson:"name" json:"name"`
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
+}
+
+func (m *{{SERVICE_TITLE}}) ToProto() *pb.{{SERVICE_TITLE}} {
+	return &pb.{{SERVICE_TITLE}}{
+		Id:        m.ID,
+		Name:      m.Name,
+		CreatedAt: m.CreatedAt.Unix(),
+		UpdatedAt: m.UpdatedAt.Unix(),
+	}
+}

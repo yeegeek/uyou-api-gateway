@@ -1,0 +1,88 @@
+package logic
+
+import (
+	"context"
+	"time"
+
+	"{{MODULE_PATH}}/internal/model"
+	"{{MODULE_PATH}}/internal/repository"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/errno"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+type Logic struct {
+	conf *conf.Config
+	log  *logger.Logger
+	repo *repository.Repository
+}
+
+func New(c *conf.Config, l *logger.Logger, r *repository.Repository) *Logic {
+	return &Logic{
+		conf: c,
+		log:  l,
+		repo: r,
+	}
+}
+
+// Create{{SERVICE_TITLE}} 创建{{SERVICE_NAME}}
+func (l *Logic) Create{{SERVICE_TITLE}}(ctx context.Context, name string) (int64, error) {
+	l.log.Info("Creating {{SERVICE_NAME}}", logger.String("name", name))
+	
+	item := &model.{{SERVICE_TITLE}}{
+		Name:      name,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	
+	if err := l.repo.Create{{SERVICE_TITLE}}(ctx, item); err != nil {
+		l.log.Error("Failed to create {{SERVICE_NAME}}", logger.Error(err))
+		return 0, errno.InternalError
+	}
+	
+	return item.ID, nil
+}
+
+// Get{{SERVICE_TITLE}} 获取{{SERVICE_NAME}}
+func (l *Logic) Get{{SERVICE_TITLE}}(ctx context.Context, id int64) (*model.{{SERVICE_TITLE}}, error) {
+	item, err := l.repo.Get{{SERVICE_TITLE}}ByID(ctx, id)
+	if err != nil {
+		return nil, errno.InternalError
+	}
+	if item == nil {
+		return nil, errno.NotFound.WithMessage("{{SERVICE_NAME}} not found")
+	}
+	return item, nil
+}
+
+// Update{{SERVICE_TITLE}} 更新{{SERVICE_NAME}}
+func (l *Logic) Update{{SERVICE_TITLE}}(ctx context.Context, id int64, name string) error {
+	item, err := l.repo.Get{{SERVICE_TITLE}}ByID(ctx, id)
+	if err != nil {
+		return errno.InternalError
+	}
+	if item == nil {
+		return errno.NotFound.WithMessage("{{SERVICE_NAME}} not found")
+	}
+	
+	item.Name = name
+	item.UpdatedAt = time.Now()
+	
+	if err := l.repo.Update{{SERVICE_TITLE}}(ctx, item); err != nil {
+		return errno.InternalError
+	}
+	return nil
+}
+
+// Delete{{SERVICE_TITLE}} 删除{{SERVICE_NAME}}
+func (l *Logic) Delete{{SERVICE_TITLE}}(ctx context.Context, id int64) error {
+	if err := l.repo.Delete{{SERVICE_TITLE}}(ctx, id); err != nil {
+		return errno.InternalError
+	}
+	return nil
+}
+
+// List{{SERVICE_TITLE}}s 列表{{SERVICE_NAME}} (简单实现)
+func (l *Logic) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize int) ([]*model.{{SERVICE_TITLE}}, int64, error) {
+	return l.repo.List{{SERVICE_TITLE}}s(ctx, page, pageSize)
+}

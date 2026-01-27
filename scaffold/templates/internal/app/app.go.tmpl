@@ -1,0 +1,55 @@
+package app
+
+import (
+	"google.golang.org/grpc"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+	"{{MODULE_PATH}}/pkg/middleware"
+	"{{MODULE_PATH}}/internal/delivery"
+	"{{MODULE_PATH}}/internal/logic"
+	"{{MODULE_PATH}}/internal/repository"
+	pb "{{MODULE_PATH}}/api/proto"
+)
+
+type App struct {
+	conf   *conf.Config
+	log    *logger.Logger
+	logic  *logic.Logic
+}
+
+func New(c *conf.Config, l *logger.Logger) (*App, error) {
+	// 1. 初始化 Repository
+	repo, err := repository.New(c, l)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 初始化 Logic
+	lgc := logic.New(c, l, repo)
+
+	return &App{
+		conf:  c,
+		log:   l,
+		logic: lgc,
+	}, nil
+}
+
+func (a *App) RegisterServers(s *grpc.Server) {
+	// 注册公开接口 (由网关同步)
+	hdl := delivery.New(a.logic, a.log)
+	pb.Register{{SERVICE_TITLE}}ServiceServer(s, hdl)
+	
+	// 注册内部接口 (网关忽略)
+	intHdl := delivery.NewInternal(a.logic, a.log)
+	pb.RegisterInternal{{SERVICE_TITLE}}ServiceServer(s, intHdl)
+}
+
+func NewGRPCInterceptors(l *logger.Logger, cfg *conf.Config) []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(
+			middleware.UnaryRecoveryInterceptor(l),
+			middleware.UnaryLoggingInterceptor(l),
+			middleware.UnaryAuthInterceptor(cfg.JWT.Secret),
+		),
+	}
+}

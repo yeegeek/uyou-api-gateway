@@ -1,0 +1,131 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"{{MODULE_PATH}}/internal/model"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// MongoRepository MongoDB 数据库实现
+// 注意：这是生产环境建议使用的实现，需要取消注释并替换 repository.go 中的内存实现
+type MongoRepository struct {
+	client     *mongo.Client
+	collection *mongo.Collection
+	log        *logger.Logger
+	nextID     int64
+}
+
+// NewMongo 创建 MongoDB 仓库实例
+func NewMongo(c *conf.Config, l *logger.Logger) (*MongoRepository, error) {
+	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d",
+		c.Database.User,
+		c.Database.Password,
+		c.Database.Host,
+		c.Database.Port,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	l.Info("Connected to MongoDB",
+		logger.String("host", c.Database.Host),
+		logger.String("database", c.Database.DBName),
+	)
+
+	collection := client.Database(c.Database.DBName).Collection("{{SERVICE_NAME}}s")
+
+	return &MongoRepository{
+		client:     client,
+		collection: collection,
+		log:        l,
+		nextID:     1,
+	}, nil
+}
+
+// Create{{SERVICE_TITLE}} 创建记录
+func (r *MongoRepository) Create{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	item.ID = r.nextID
+	r.nextID++
+	
+	_, err := r.collection.InsertOne(ctx, item)
+	return err
+}
+
+// Get{{SERVICE_TITLE}}ByID 根据ID获取记录
+func (r *MongoRepository) Get{{SERVICE_TITLE}}ByID(ctx context.Context, id int64) (*model.{{SERVICE_TITLE}}, error) {
+	var item model.{{SERVICE_TITLE}}
+	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&item)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// Update{{SERVICE_TITLE}} 更新记录
+func (r *MongoRepository) Update{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	_, err := r.collection.UpdateOne(ctx, bson.M{"_id": item.ID}, bson.M{"$set": item})
+	return err
+}
+
+// Delete{{SERVICE_TITLE}} 删除记录
+func (r *MongoRepository) Delete{{SERVICE_TITLE}}(ctx context.Context, id int64) error {
+	_, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+// List{{SERVICE_TITLE}}s 分页查询
+func (r *MongoRepository) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize int) ([]*model.{{SERVICE_TITLE}}, int64, error) {
+	// 获取总数
+	total, err := r.collection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
+	skip := int64((page - 1) * pageSize)
+	if skip < 0 {
+		skip = 0
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "_id", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(pageSize))
+
+	cursor, err := r.collection.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var items []*model.{{SERVICE_TITLE}}
+	if err := cursor.All(ctx, &items); err != nil {
+		return nil, 0, err
+	}
+
+	return items, total, nil
+}
+
+// Close 关闭数据库连接
+func (r *MongoRepository) Close() error {
+	return r.client.Disconnect(context.Background())
+}

@@ -1,0 +1,35 @@
+-- {{SERVICE_TITLE}} Service 数据库初始化脚本
+-- 数据库: {{DB_NAME}}
+
+-- 创建数据库 (如果不存在)
+-- CREATE DATABASE {{DB_NAME}};
+
+-- 创建主表
+CREATE TABLE IF NOT EXISTS {{TABLE_NAME}} (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_{{TABLE_NAME}}_name ON {{TABLE_NAME}}(name);
+CREATE INDEX IF NOT EXISTS idx_{{TABLE_NAME}}_created_at ON {{TABLE_NAME}}(created_at DESC);
+
+-- 插入示例数据 (可选)
+-- INSERT INTO {{TABLE_NAME}} (name) VALUES ('示例数据');
+
+-- 添加更新时间触发器
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS update_{{TABLE_NAME}}_updated_at ON {{TABLE_NAME}};
+CREATE TRIGGER update_{{TABLE_NAME}}_updated_at
+    BEFORE UPDATE ON {{TABLE_NAME}}
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

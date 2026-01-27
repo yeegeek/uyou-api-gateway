@@ -1,0 +1,69 @@
+package conf
+
+import (
+	"strings"
+
+	"github.com/joho/godotenv"
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	Server   ServerConfig
+	Database DatabaseConfig
+	Redis    RedisConfig
+	JWT      JWTConfig
+	Log      LogConfig
+}
+
+type ServerConfig struct {
+	GRPCPort int `mapstructure:"grpc_port"`
+	HTTPPort int `mapstructure:"http_port"`
+}
+
+type DatabaseConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string `mapstructure:"dbname"`
+	SSLMode  string `mapstructure:"sslmode"`
+}
+
+type RedisConfig struct {
+	Host     string
+	Port     int
+	DB       int
+	Password string
+}
+
+type JWTConfig struct {
+	Secret string
+}
+
+type LogConfig struct {
+	Level  string
+	Format string
+}
+
+func Load() *Config {
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath("./config")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.SetEnvPrefix("{{SERVICE_NAME_UPPER}}")
+	v.AutomaticEnv()
+
+	// Load .env file if exists
+	_ = godotenv.Load()
+
+	if err := v.ReadInConfig(); err != nil {
+		// 容忍配置文件不存在，可能全靠环境变量
+	}
+
+	conf := &Config{}
+	if err := v.Unmarshal(conf); err != nil {
+		panic(err)
+	}
+	return conf
+}

@@ -1,0 +1,85 @@
+package main
+
+import (
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"{{MODULE_PATH}}/internal/app"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+func main() {
+	// 1. 初始化配置
+	c := conf.Load()
+
+	// 2. 初始化日志
+	log := logger.New(c.Log.Level, c.Log.Format)
+
+	// 3. 构造应用实例
+	application, err := app.New(c, log)
+	if err != nil {
+		log.Fatal("failed to initialize application", logger.Error(err))
+	}
+
+	// 4. 启动健康检查 HTTP 服务器
+	go startHealthServer(c.Server.HTTPPort, log)
+
+	// 5. 启动 gRPC 服务器
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", c.Server.GRPCPort))
+	if err != nil {
+		log.Fatal("failed to listen", logger.Int("port", c.Server.GRPCPort), logger.Error(err))
+	}
+
+	s := grpc.NewServer(
+		app.NewGRPCInterceptors(log, c)...,
+	)
+	
+	// 注册健康检查服务
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	
+	// 注册业务服务
+	application.RegisterServers(s)
+
+	// 优雅中止处理
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		<-sigCh
+		log.Info("shutting down gRPC server...")
+		s.GracefulStop()
+	}()
+
+	log.Info("🚀 {{SERVICE_TITLE}} Service started", logger.Int("port", c.Server.GRPCPort))
+	if err := s.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+		log.Fatal("failed to serve", logger.Error(err))
+	}
+}
+
+func startHealthServer(port int, log *logger.Logger) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
+
+	log.Info("🏥 Health server started", logger.Int("port", port))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error("health server error", logger.Error(err))
+	}
+}

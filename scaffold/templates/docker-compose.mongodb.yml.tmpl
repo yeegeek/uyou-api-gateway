@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # {{SERVICE_TITLE}} 服务
+  {{SERVICE_NAME}}:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uyou-{{SERVICE_NAME}}
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-example}
+      MONGO_DATABASE: {{DB_NAME}}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: {{REDIS_DB}}
+    ports:
+      - "{{GRPC_PORT}}:{{GRPC_PORT}}"
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - uyou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:{{HTTP_PORT}}/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # MongoDB 数据库
+  mongodb:
+    image: mongo:7
+    container_name: uyou-{{SERVICE_NAME}}-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-example}
+      MONGO_INITDB_DATABASE: {{DB_NAME}}
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: uyou-{{SERVICE_NAME}}-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+networks:
+  uyou-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  redis_data:

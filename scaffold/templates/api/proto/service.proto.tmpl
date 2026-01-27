@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package {{SERVICE_NAME}};
+
+option go_package = "{{MODULE_PATH}}/api/proto";
+
+// {{SERVICE_TITLE}} Service
+service {{SERVICE_TITLE}}Service {
+  // 创建{{SERVICE_TITLE}}
+  // @auth
+  // @limit(rate=5, burst=10)
+  rpc Create(Create{{SERVICE_TITLE}}Request) returns (Create{{SERVICE_TITLE}}Response);
+  
+  // 获取{{SERVICE_TITLE}}
+  rpc Get(Get{{SERVICE_TITLE}}Request) returns (Get{{SERVICE_TITLE}}Response);
+  
+  // 更新{{SERVICE_TITLE}}
+  rpc Update(Update{{SERVICE_TITLE}}Request) returns (Update{{SERVICE_TITLE}}Response);
+  
+  // 删除{{SERVICE_TITLE}}
+  rpc Delete(Delete{{SERVICE_TITLE}}Request) returns (Delete{{SERVICE_TITLE}}Response);
+  
+  // 列表{{SERVICE_TITLE}}
+  rpc List(List{{SERVICE_TITLE}}Request) returns (List{{SERVICE_TITLE}}Response);
+}
+
+// {{SERVICE_TITLE}} 实体
+message {{SERVICE_TITLE}} {
+  int64 id = 1;
+  string name = 2;
+  int64 created_at = 3;
+  int64 updated_at = 4;
+}
+
+// 创建请求
+message Create{{SERVICE_TITLE}}Request {
+  string name = 1;
+}
+
+message Create{{SERVICE_TITLE}}Response {
+  int64 id = 1;
+  string message = 2;
+}
+
+// 获取请求
+message Get{{SERVICE_TITLE}}Request {
+  int64 id = 1;
+}
+
+message Get{{SERVICE_TITLE}}Response {
+  {{SERVICE_TITLE}} data = 1;
+}
+
+// 更新请求
+message Update{{SERVICE_TITLE}}Request {
+  int64 id = 1;
+  string name = 2;
+}
+
+message Update{{SERVICE_TITLE}}Response {
+  bool success = 1;
+  string message = 2;
+}
+
+// 删除请求
+message Delete{{SERVICE_TITLE}}Request {
+  int64 id = 1;
+}
+
+message Delete{{SERVICE_TITLE}}Response {
+  bool success = 1;
+  string message = 2;
+}
+
+// 列表请求
+message List{{SERVICE_TITLE}}Request {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message List{{SERVICE_TITLE}}Response {
+  repeated {{SERVICE_TITLE}} items = 1;
+  int64 total = 2;
+}

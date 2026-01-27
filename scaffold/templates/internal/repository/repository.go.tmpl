@@ -1,0 +1,81 @@
+package repository
+
+import (
+	"context"
+	"sync"
+
+	"{{MODULE_PATH}}/internal/model"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+type Repository struct {
+	conf   *conf.Config
+	log    *logger.Logger
+	data   map[int64]*model.{{SERVICE_TITLE}} // Simple in-memory storage for demo
+	nextID int64
+	mu     sync.RWMutex
+}
+
+func New(c *conf.Config, l *logger.Logger) (*Repository, error) {
+	return &Repository{
+		conf:   c,
+		log:    l,
+		data:   make(map[int64]*model.{{SERVICE_TITLE}}),
+		nextID: 1,
+	}, nil
+}
+
+// Create{{SERVICE_TITLE}} creates a new {{SERVICE_NAME}}
+func (r *Repository) Create{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	item.ID = r.nextID
+	r.nextID++
+	r.data[item.ID] = item
+	return nil
+}
+
+// Get{{SERVICE_TITLE}}ByID gets a {{SERVICE_NAME}} by ID
+func (r *Repository) Get{{SERVICE_TITLE}}ByID(ctx context.Context, id int64) (*model.{{SERVICE_TITLE}}, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
+	item, ok := r.data[id]
+	if !ok {
+		return nil, nil
+	}
+	return item, nil
+}
+
+// Update{{SERVICE_TITLE}} updates a {{SERVICE_NAME}}
+func (r *Repository) Update{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	r.data[item.ID] = item
+	return nil
+}
+
+// Delete{{SERVICE_TITLE}} deletes a {{SERVICE_NAME}}
+func (r *Repository) Delete{{SERVICE_TITLE}}(ctx context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	delete(r.data, id)
+	return nil
+}
+
+// List{{SERVICE_TITLE}}s lists {{SERVICE_NAME}}s with pagination
+func (r *Repository) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize int) ([]*model.{{SERVICE_TITLE}}, int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
+	var items []*model.{{SERVICE_TITLE}}
+	for _, item := range r.data {
+		items = append(items, item)
+	}
+	// In a real implementation, you would apply pagination here
+	return items, int64(len(items)), nil
+}

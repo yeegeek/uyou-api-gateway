@@ -1,0 +1,91 @@
+package delivery
+
+import (
+	"context"
+	"{{MODULE_PATH}}/internal/logic"
+	"{{MODULE_PATH}}/pkg/errno"
+	"{{MODULE_PATH}}/pkg/logger"
+	pb "{{MODULE_PATH}}/api/proto"
+)
+
+type Handler struct {
+	pb.Unimplemented{{SERVICE_TITLE}}ServiceServer
+	logic *logic.Logic
+	log   *logger.Logger
+}
+
+func New(l *logic.Logic, log *logger.Logger) *Handler {
+	return &Handler{
+		logic: l,
+		log:   log,
+	}
+}
+
+// Create 创建{{SERVICE_NAME}}
+func (h *Handler) Create(ctx context.Context, req *pb.Create{{SERVICE_TITLE}}Request) (*pb.Create{{SERVICE_TITLE}}Response, error) {
+	id, err := h.logic.Create{{SERVICE_TITLE}}(ctx, req.Name)
+	if err != nil {
+		return nil, errno.FromError(err).GRPCStatus().Err()
+	}
+
+	return &pb.Create{{SERVICE_TITLE}}Response{
+		Id:      id,
+		Message: "{{SERVICE_NAME}} created successfully",
+	}, nil
+}
+
+// Get 获取{{SERVICE_NAME}}
+func (h *Handler) Get(ctx context.Context, req *pb.Get{{SERVICE_TITLE}}Request) (*pb.Get{{SERVICE_TITLE}}Response, error) {
+	item, err := h.logic.Get{{SERVICE_TITLE}}(ctx, req.Id)
+	if err != nil {
+		return nil, errno.FromError(err).GRPCStatus().Err()
+	}
+
+	return &pb.Get{{SERVICE_TITLE}}Response{
+		Data: item.ToProto(),
+	}, nil
+}
+
+// Update 更新{{SERVICE_NAME}}
+func (h *Handler) Update(ctx context.Context, req *pb.Update{{SERVICE_TITLE}}Request) (*pb.Update{{SERVICE_TITLE}}Response, error) {
+	err := h.logic.Update{{SERVICE_TITLE}}(ctx, req.Id, req.Name)
+	if err != nil {
+		return nil, errno.FromError(err).GRPCStatus().Err()
+	}
+
+	return &pb.Update{{SERVICE_TITLE}}Response{
+		Success: true,
+		Message: "{{SERVICE_NAME}} updated successfully",
+	}, nil
+}
+
+// Delete 删除{{SERVICE_NAME}}
+func (h *Handler) Delete(ctx context.Context, req *pb.Delete{{SERVICE_TITLE}}Request) (*pb.Delete{{SERVICE_TITLE}}Response, error) {
+	err := h.logic.Delete{{SERVICE_TITLE}}(ctx, req.Id)
+	if err != nil {
+		return nil, errno.FromError(err).GRPCStatus().Err()
+	}
+
+	return &pb.Delete{{SERVICE_TITLE}}Response{
+		Success: true,
+		Message: "{{SERVICE_NAME}} deleted successfully",
+	}, nil
+}
+
+// List 列表{{SERVICE_NAME}}
+func (h *Handler) List(ctx context.Context, req *pb.List{{SERVICE_TITLE}}Request) (*pb.List{{SERVICE_TITLE}}Response, error) {
+	items, total, err := h.logic.List{{SERVICE_TITLE}}s(ctx, int(req.Page), int(req.PageSize))
+	if err != nil {
+		return nil, errno.FromError(err).GRPCStatus().Err()
+	}
+
+	var pbItems []*pb.{{SERVICE_TITLE}}
+	for _, item := range items {
+		pbItems = append(pbItems, item.ToProto())
+	}
+
+	return &pb.List{{SERVICE_TITLE}}Response{
+		Items: pbItems,
+		Total: total,
+	}, nil
+}

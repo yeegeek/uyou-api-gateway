@@ -7,6 +7,10 @@ apisix:
   enable_reuseport: true
   enable_ipv6: true
   
+  # 启用路径参数支持 (如 /users/:id)
+  router:
+    http: radixtree_uri_with_parameter
+  
   config_center: etcd
   
   allow_admin:

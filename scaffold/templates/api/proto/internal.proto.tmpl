@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package {{SERVICE_NAME}};
+
+option go_package = "{{MODULE_PATH}}/api/proto";
+
+// Internal{{SERVICE_TITLE}}Service 仅限微服务间内部调用的接口 (网关已忽略)
+service Internal{{SERVICE_TITLE}}Service {
+  // 内部同步示例
+  rpc InternalSync(InternalSyncRequest) returns (InternalSyncResponse);
+}
+
+message InternalSyncRequest {
+  string msg = 1;
+}
+
+message InternalSyncResponse {
+  bool success = 1;
+}

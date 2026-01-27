@@ -1,5 +1,5 @@
 # 自动生成的 APISIX 配置文件
-# generated_at: Tue Jan 27 12:16:51 CST 2026
+# generated_at: Tue Jan 27 13:29:44 CST 2026
 
 routes:
   - id: user_create
@@ -24,10 +24,14 @@ routes:
       scheme: grpc
   - id: user_get
     name: user_get
-    uri: /api/v1/users/*
+    uri: /api/v1/users/:id
     methods:
       - GET
     plugins:
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - return function(conf, ctx) local id = ctx.curr_req_matched and ctx.curr_req_matched.id; if id then ngx.req.set_uri_args({id = id}) end end
       grpc-transcode:
         proto_id: "1"
         service: user.UserService
@@ -39,10 +43,14 @@ routes:
       scheme: grpc
   - id: user_update
     name: user_update
-    uri: /api/v1/users/*
+    uri: /api/v1/users/:id
     methods:
       - PUT
     plugins:
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - return function(conf, ctx) local id = ctx.curr_req_matched and ctx.curr_req_matched.id; if id then ngx.req.set_uri_args({id = id}) end end
       grpc-transcode:
         proto_id: "1"
         service: user.UserService
@@ -54,10 +62,14 @@ routes:
       scheme: grpc
   - id: user_delete
     name: user_delete
-    uri: /api/v1/users/*
+    uri: /api/v1/users/:id
     methods:
       - DELETE
     plugins:
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - return function(conf, ctx) local id = ctx.curr_req_matched and ctx.curr_req_matched.id; if id then ngx.req.set_uri_args({id = id}) end end
       grpc-transcode:
         proto_id: "1"
         service: user.UserService

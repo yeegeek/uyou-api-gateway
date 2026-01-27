@@ -1,0 +1,45 @@
+package errno
+
+import (
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type Errno struct {
+	Code    int32
+	Message string
+}
+
+func (e Errno) Error() string {
+	return e.Message
+}
+
+func (e Errno) GRPCStatus() *status.Status {
+	return status.New(codes.Code(e.Code), e.Message)
+}
+
+func (e Errno) WithMessage(msg string) Errno {
+	e.Message = msg
+	return e
+}
+
+var (
+	Success          = Errno{Code: 0, Message: "Success"}
+	InternalError    = Errno{Code: 13, Message: "Internal Server Error"}
+	InvalidArgument  = Errno{Code: 3, Message: "Invalid Argument"}
+	NotFound         = Errno{Code: 5, Message: "Not Found"}
+	AlreadyExists    = Errno{Code: 6, Message: "Already Exists"}
+	PermissionDenied = Errno{Code: 7, Message: "Permission Denied"}
+	Unauthenticated  = Errno{Code: 16, Message: "Unauthenticated"}
+)
+
+func FromError(err error) Errno {
+	if err == nil {
+		return Success
+	}
+	if e, ok := err.(Errno); ok {
+		return e
+	}
+	s, _ := status.FromError(err)
+	return Errno{Code: int32(s.Code()), Message: s.Message()}
+}

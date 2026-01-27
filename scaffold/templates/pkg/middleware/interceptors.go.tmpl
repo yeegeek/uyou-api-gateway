@@ -1,0 +1,101 @@
+package middleware
+
+import (
+	"context"
+	"runtime/debug"
+	"time"
+
+	"{{MODULE_PATH}}/pkg/logger"
+	"{{MODULE_PATH}}/pkg/ctxout"
+	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"go.uber.org/zap"
+)
+
+// UnaryRecoveryInterceptor handles panic recovery
+func UnaryRecoveryInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("panic recovered",
+					logger.Any("panic", r),
+					logger.String("stack", string(debug.Stack())),
+				)
+				err = status.Errorf(codes.Internal, "Internal server error")
+			}
+		}()
+		return handler(ctx, req)
+	}
+}
+
+// UnaryLoggingInterceptor logs method calls
+func UnaryLoggingInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		duration := time.Since(start)
+
+		fields := []zap.Field{
+			logger.String("method", info.FullMethod),
+			zap.Duration("duration", duration),
+			logger.String("user_id", ctxout.GetUserID(ctx)),
+		}
+
+		if err != nil {
+			fields = append(fields, logger.Error(err))
+			log.Error("gRPC request failed", fields...)
+		} else {
+			log.Info("gRPC request success", fields...)
+		}
+
+		return resp, err
+	}
+}
+
+// UnaryAuthInterceptor extracts user ID from JWT token in metadata.
+func UnaryAuthInterceptor(secret string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if ok {
+			var tokenString string
+			
+			// 1. Try standard Authorization header
+			authHeader := md.Get("authorization")
+			if len(authHeader) > 0 {
+				tokenString = authHeader[0]
+				if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+					tokenString = tokenString[7:]
+				}
+			}
+
+			// 2. Try x-user-id (if acting as token carrier per user feedback)
+			if tokenString == "" {
+				vals := md.Get("x-user-id")
+				if len(vals) > 0 {
+					tokenString = vals[0]
+				}
+			}
+
+			if tokenString != "" {
+				token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+					return []byte(secret), nil
+				})
+
+				if err == nil && token.Valid {
+					if claims, ok := token.Claims.(jwt.MapClaims); ok {
+						if userID, ok := claims["user_id"].(string); ok {
+							ctx = context.WithValue(ctx, ctxout.KeyUserID, userID)
+						} else if sub, ok := claims["sub"].(string); ok {
+							// Fallback to sub as user ID
+							ctx = context.WithValue(ctx, ctxout.KeyUserID, sub)
+						}
+					}
+				}
+			}
+		}
+		return handler(ctx, req)
+	}
+}

@@ -1,0 +1,121 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	_ "github.com/lib/pq"
+	"{{MODULE_PATH}}/internal/model"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// PostgresRepository PostgreSQL 数据库实现
+// 注意：这是生产环境建议使用的实现，需要取消注释并替换 repository.go 中的内存实现
+type PostgresRepository struct {
+	db  *sql.DB
+	log *logger.Logger
+}
+
+// NewPostgres 创建 PostgreSQL 仓库实例
+func NewPostgres(c *conf.Config, l *logger.Logger) (*PostgresRepository, error) {
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.Database.Host,
+		c.Database.Port,
+		c.Database.User,
+		c.Database.Password,
+		c.Database.DBName,
+		c.Database.SSLMode,
+	)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	l.Info("Connected to PostgreSQL",
+		logger.String("host", c.Database.Host),
+		logger.String("database", c.Database.DBName),
+	)
+
+	return &PostgresRepository{db: db, log: l}, nil
+}
+
+// Create{{SERVICE_TITLE}} 创建记录
+func (r *PostgresRepository) Create{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	query := `INSERT INTO {{TABLE_NAME}} (name, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id`
+	return r.db.QueryRowContext(ctx, query, item.Name, item.CreatedAt, item.UpdatedAt).Scan(&item.ID)
+}
+
+// Get{{SERVICE_TITLE}}ByID 根据ID获取记录
+func (r *PostgresRepository) Get{{SERVICE_TITLE}}ByID(ctx context.Context, id int64) (*model.{{SERVICE_TITLE}}, error) {
+	query := `SELECT id, name, created_at, updated_at FROM {{TABLE_NAME}} WHERE id = $1`
+	
+	item := &model.{{SERVICE_TITLE}}{}
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&item.ID, &item.Name, &item.CreatedAt, &item.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// Update{{SERVICE_TITLE}} 更新记录
+func (r *PostgresRepository) Update{{SERVICE_TITLE}}(ctx context.Context, item *model.{{SERVICE_TITLE}}) error {
+	query := `UPDATE {{TABLE_NAME}} SET name = $1, updated_at = $2 WHERE id = $3`
+	_, err := r.db.ExecContext(ctx, query, item.Name, item.UpdatedAt, item.ID)
+	return err
+}
+
+// Delete{{SERVICE_TITLE}} 删除记录
+func (r *PostgresRepository) Delete{{SERVICE_TITLE}}(ctx context.Context, id int64) error {
+	query := `DELETE FROM {{TABLE_NAME}} WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}
+
+// List{{SERVICE_TITLE}}s 分页查询
+func (r *PostgresRepository) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize int) ([]*model.{{SERVICE_TITLE}}, int64, error) {
+	// 获取总数
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM {{TABLE_NAME}}`
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
+	offset := (page - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+	
+	query := `SELECT id, name, created_at, updated_at FROM {{TABLE_NAME}} ORDER BY id DESC LIMIT $1 OFFSET $2`
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var items []*model.{{SERVICE_TITLE}}
+	for rows.Next() {
+		item := &model.{{SERVICE_TITLE}}{}
+		if err := rows.Scan(&item.ID, &item.Name, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+
+	return items, total, nil
+}
+
+// Close 关闭数据库连接
+func (r *PostgresRepository) Close() error {
+	return r.db.Close()
+}

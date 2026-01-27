@@ -1,0 +1,29 @@
+package model
+
+import (
+	"time"
+
+	pb "{{MODULE_PATH}}/api/proto"
+)
+
+// {{SERVICE_TITLE}} 数据库模型示例 (PostgreSQL)
+type {{SERVICE_TITLE}} struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name      string    `gorm:"size:255;not null" json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (m *{{SERVICE_TITLE}}) TableName() string {
+	return "{{TABLE_NAME}}"
+}
+
+// ToProto 转换为 Protobuf 消息
+func (m *{{SERVICE_TITLE}}) ToProto() *pb.{{SERVICE_TITLE}} {
+	return &pb.{{SERVICE_TITLE}}{
+		Id:        m.ID,
+		Name:      m.Name,
+		CreatedAt: m.CreatedAt.Unix(),
+		UpdatedAt: m.UpdatedAt.Unix(),
+	}
+}

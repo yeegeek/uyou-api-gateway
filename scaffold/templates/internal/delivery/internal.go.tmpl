@@ -1,0 +1,28 @@
+package delivery
+
+import (
+	"context"
+
+	"{{MODULE_PATH}}/internal/logic"
+	"{{MODULE_PATH}}/pkg/logger"
+	pb "{{MODULE_PATH}}/api/proto"
+)
+
+type InternalHandler struct {
+	pb.UnimplementedInternal{{SERVICE_TITLE}}ServiceServer
+	logic *logic.Logic
+	log   *logger.Logger
+}
+
+func NewInternal(l *logic.Logic, log *logger.Logger) *InternalHandler {
+	return &InternalHandler{
+		logic: l,
+		log:   log,
+	}
+}
+
+// InternalSync 实例内部通信方法
+func (h *InternalHandler) InternalSync(ctx context.Context, req *pb.InternalSyncRequest) (*pb.InternalSyncResponse, error) {
+	h.log.Info("received internal sync request", logger.String("msg", req.Msg))
+	return &pb.InternalSyncResponse{Success: true}, nil
+}

@@ -75,21 +75,7 @@ dev:
 
 ## new-service: 创建新的微服务 (交互式)
 new-service:
-	@echo "🚀 创建新的微服务..."
-	@echo ""
-	@cd scaffold && go run generator.go
-	@echo ""
-	@echo "✅ 服务创建成功！"
-	@echo ""
-	@echo "📝 后续步骤:"
-	@echo "   1. cd services/<service-name>"
-	@echo "   2. 编辑 api/proto/*.proto 定义 API"
-	@echo "   3. make proto  # 生成 gRPC 代码"
-	@echo "   4. 实现业务逻辑"
-	@echo "   5. cd ../../ && make start dev  # 启动开发环境"
-	@echo ""
-	@echo "   6. 配置路由: 在 apisix/config/routes/ 创建路由文件"
-	@echo "   7. make update-routes  # 同步路由到 APISIX"
+	@./scaffold/generate.sh
 
 ## update-routes: 合并并更新路由 (生产环境会同时归档 Proto)
 update-routes:
