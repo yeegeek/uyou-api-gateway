@@ -3,6 +3,12 @@
 # 默认目标
 .DEFAULT_GOAL := help
 
+# 加载 .env 文件 (如果存在)
+ifneq (,$(wildcard .env))
+	include .env
+	export
+endif
+
 # 检测是否使用 dev 环境
 ifeq ($(filter dev,$(MAKECMDGOALS)),dev)
 	COMPOSE_FILE := -f docker-compose.dev.yml
@@ -12,7 +18,7 @@ else
 	ENV_SUFFIX := (生产环境)
 endif
 
-# APISIX 相关配置
+# APISIX 相关配置 (默认值，优先使用 .env 中的配置)
 APISIX_ADMIN_URL ?= http://localhost:9180
 APISIX_ADMIN_KEY ?= edd1c9f034335f136f87ad84b625c8f1
 
@@ -96,13 +102,7 @@ validate:
 
 ## apisix-status: 查看 APISIX 当前生效的配置 (Routes, Consumers, Global Rules)
 apisix-status:
-	@echo "📊 APISIX 当前配置:"
-	@echo "--- 路由 (Routes) ---"
-	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/routes -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"id":|"uri":|"name":' || echo "无"
-	@echo "\n--- 消费者 (Consumers) ---"
-	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/consumers -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"username":' || echo "无"
-	@echo "\n--- 全局规则 (Global Rules) ---"
-	@curl -s $(APISIX_ADMIN_URL)/apisix/admin/global_rules -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -m json.tool | grep -E '"id":' || echo "无"
+	@APISIX_ADMIN_URL=$(APISIX_ADMIN_URL) APISIX_ADMIN_KEY=$(APISIX_ADMIN_KEY) python3 ./scripts/apisix-status.py
 
 ## apisix-clear: 清空 APISIX 所有配置 (危险操作)
 apisix-clear:

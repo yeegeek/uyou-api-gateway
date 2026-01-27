@@ -1,4 +1,4 @@
-# 自动生成的路由配置 - Tue Jan 27 15:35:59 CST 2026
+# 自动生成的路由配置 - Tue Jan 27 19:15:33 CST 2026
 # 源文件: /Users/sam/Projects/2026/uyou-api-gateway/services/user/api/proto/user.proto
 routes:
   - id: "user_create"

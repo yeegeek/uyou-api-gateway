@@ -23,7 +23,14 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# 配置变量
+# 加载 .env 文件 (如果存在且环境变量未设置)
+if [[ -f "${PROJECT_ROOT}/.env" ]]; then
+    set -a  # 自动 export 所有变量
+    source "${PROJECT_ROOT}/.env"
+    set +a
+fi
+
+# 配置变量 (优先使用环境变量，其次使用 .env，最后使用默认值)
 GATEWAY_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
 ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 CONFIG_DIR="${APISIX_CONFIG_DIR:-${PROJECT_ROOT}/apisix/config}"
