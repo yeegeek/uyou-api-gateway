@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package user;
+
+option go_package = "github.com/yeegeek/uyou-user-service/api/proto";
+
+// User Service
+service UserService {
+  // 创建User
+  // @auth
+  // @limit(rate=2, burst=5)
+  rpc Create(CreateUserRequest) returns (CreateUserResponse);
+  
+  // 获取User
+  rpc Get(GetUserRequest) returns (GetUserResponse);
+  
+  // 更新User
+  // @auth
+  rpc Update(UpdateUserRequest) returns (UpdateUserResponse);
+  
+  // 删除User
+  // @auth
+  rpc Delete(DeleteUserRequest) returns (DeleteUserResponse);
+  
+  // 列表User
+  // @auth
+  rpc List(ListUserRequest) returns (ListUserResponse);
+}
+
+// User 实体
+message User {
+  int64 id = 1;
+  string name = 2;
+  int64 created_at = 3;
+  int64 updated_at = 4;
+}
+
+// 创建请求
+message CreateUserRequest {
+  string name = 1;
+}
+
+message CreateUserResponse {
+  int64 id = 1;
+  string message = 2;
+}
+
+// 获取请求
+message GetUserRequest {
+  int64 id = 1;
+}
+
+message GetUserResponse {
+  User data = 1;
+}
+
+// 更新请求
+message UpdateUserRequest {
+  int64 id = 1;
+  string name = 2;
+}
+
+message UpdateUserResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 删除请求
+message DeleteUserRequest {
+  int64 id = 1;
+}
+
+message DeleteUserResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// 列表请求
+message ListUserRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message ListUserResponse {
+  repeated User items = 1;
+  int64 total = 2;
+}

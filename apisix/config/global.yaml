@@ -1,0 +1,20 @@
+# APISIX 全局配置
+# 包含全局规则 (Global Rules) 和 消费者 (Consumers)
+
+# 全局规则应用于所有路由
+global_rules:
+  - id: 1
+    plugins:
+      cors: {}
+      prometheus: {}
+      client-control:
+        max_body_size: 1048576 # 1MB
+
+# 消费者定义 (用于 JWT 认证等)
+consumers:
+  - username: "user_key"
+    plugins:
+      jwt-auth:
+        key: "user_key"
+        secret: "uyou_secret_key_2026"
+        algorithm: "HS256"

@@ -87,11 +87,17 @@ new-service:
 	@echo "   6. 配置路由: 在 apisix/config/routes/ 创建路由文件"
 	@echo "   7. make update-routes  # 同步路由到 APISIX"
 
-## update-routes: 更新 APISIX 路由配置
+## update-routes: 合并并更新路由 (生产环境会同时归档 Proto)
 update-routes:
-	@echo "🔄 更新 APISIX 路由配置..."
+	@echo "🔄 正在构建并更新 APISIX 路由配置..."
 	@./scripts/merge-routes.sh
-	@echo "✅ 路由配置已更新！"
+	@echo "✅ 路由配置已同步！"
+
+## deploy-routes: 仅部署现有配置 (不依赖微服务源码)
+deploy-routes:
+	@echo "🚀 正在部署现有路由配置到 APISIX..."
+	@./scripts/merge-routes.sh --deploy-only
+	@echo "✅ 部署完成！"
 
 ## validate: 验证配置文件
 validate:
@@ -116,7 +122,8 @@ help:
 	@echo ""
 	@echo "服务开发:"
 	@echo "  make new-service      创建新的微服务 (交互式)"
-	@echo "  make update-routes    更新 APISIX 路由配置"
+	@echo "  make update-routes    构建并更新 APISIX 路由配置"
+	@echo "  make deploy-routes    仅部署现有配置 (生产环境)"
 	@echo "  make validate         验证配置文件"
 	@echo ""
 	@echo "工具命令:"

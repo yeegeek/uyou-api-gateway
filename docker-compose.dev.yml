@@ -103,6 +103,31 @@ services:
     restart: unless-stopped
 
   # ==================== 微服务 ====================
+
+  # User Service
+  user:
+    build:
+      context: ./services/user
+      dockerfile: Dockerfile
+    container_name: uyou-user-dev
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: userdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+    ports:
+      - "50051:50051"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
   # 新生成的微服务将自动添加到此处
 
 networks:

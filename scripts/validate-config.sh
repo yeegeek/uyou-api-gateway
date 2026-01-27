@@ -109,7 +109,7 @@ validate_yaml_syntax() {
     fi
 }
 
-# 提取路由信息
+# 提取路由 info
 extract_routes() {
     local file=$1
     
@@ -125,7 +125,7 @@ try:
     with open("$file", "r") as f:
         data = yaml.safe_load(f)
     
-    routes = data.get("routes", [])
+    routes = data.get("routes", []) if data else []
     for route in routes:
         name = route.get("name", "unnamed")
         uri = route.get("uri", "")
@@ -150,7 +150,7 @@ validate_route_uniqueness() {
     
     # 收集所有路由名称
     # 处理 routes 目录下的 yaml 文件
-    shopt -s nullglob  # 如果 glob 没有匹配，返回空而不是字面量
+    shopt -s nullglob
     for route_file in "${ROUTES_DIR}"/*.yaml; do
         if [ ! -f "$route_file" ]; then
             continue
@@ -166,22 +166,7 @@ validate_route_uniqueness() {
             fi
         done < <(extract_routes "$route_file" 2>/dev/null)
     done
-    shopt -u nullglob  # 恢复默认行为
-    
-    # 处理主配置文件（如果存在）
-    if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
-        route_file="${CONFIG_DIR}/apisix.yaml"
-        
-        while IFS='|' read -r name uri methods; do
-            if [ -n "$name" ] && [ "$name" != "unnamed" ]; then
-                if [[ " ${route_names[@]} " =~ " ${name} " ]]; then
-                    duplicate_names+=("$name")
-                else
-                    route_names+=("$name")
-                fi
-            fi
-        done < <(extract_routes "$route_file" 2>/dev/null)
-    fi
+    shopt -u nullglob
     
     if [ ${#duplicate_names[@]} -gt 0 ]; then
         echo -e "${RED}  ✗ 发现重复的路由名称:${NC}"
@@ -210,31 +195,32 @@ validate_uri_conflicts() {
         
         while IFS='|' read -r name uri methods; do
             if [ -n "$uri" ]; then
-                # 检查冲突（简化版：完全匹配）
-                for existing in "${uri_map[@]}"; do
-                    if [ "$existing" = "$uri" ]; then
-                        conflicts+=("$uri")
+                # 检查冲突：同一个 URI 且有交集的 HTTP 方法
+                for existing_entry in "${uri_map[@]}"; do
+                    local ex_uri=$(echo "$existing_entry" | cut -d'|' -f1)
+                    local ex_name=$(echo "$existing_entry" | cut -d'|' -f2)
+                    local ex_methods=$(echo "$existing_entry" | cut -d'|' -f3)
+                    
+                    if [ "$ex_uri" = "$uri" ]; then
+                        # 检查方法是否有交集
+                        local intersection=false
+                        IFS=',' read -ra current_m <<< "$methods"
+                        for m in "${current_m[@]}"; do
+                            if [[ ",$ex_methods," == *",$m,"* ]]; then
+                                intersection=true
+                                break
+                            fi
+                        done
+                        
+                        if [ "$intersection" = true ]; then
+                            conflicts+=("URI: $uri | Methods: $methods | Conflict: $name vs $ex_name")
+                        fi
                     fi
                 done
                 uri_map+=("$uri|$name|$methods")
             fi
         done < <(extract_routes "$route_file" 2>/dev/null)
     done
-    
-    # 处理主配置文件（如果存在）
-    if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
-        route_file="${CONFIG_DIR}/apisix.yaml"
-        while IFS='|' read -r name uri methods; do
-            if [ -n "$uri" ]; then
-                for existing in "${uri_map[@]}"; do
-                    if [ "$existing" = "$uri" ]; then
-                        conflicts+=("$uri")
-                    fi
-                done
-                uri_map+=("$uri|$name|$methods")
-            fi
-        done < <(extract_routes "$route_file" 2>/dev/null)
-    fi
     shopt -u nullglob
     
     if [ ${#conflicts[@]} -gt 0 ]; then
@@ -270,25 +256,21 @@ import sys
 try:
     with open("$route_file", "r") as f:
         data = yaml.safe_load(f)
-    
+    if not data or not data.get("routes"):
+        sys.exit(0)
+        
     routes = data.get("routes", [])
     for i, route in enumerate(routes):
         missing = []
-        
-        if not route.get("name"):
-            missing.append("name")
-        if not route.get("uri"):
-            missing.append("uri")
-        if not route.get("methods"):
-            missing.append("methods")
-        if not route.get("upstream"):
-            missing.append("upstream")
+        if not route.get("name"): missing.append("name")
+        if not route.get("uri"): missing.append("uri")
+        if not route.get("methods"): missing.append("methods")
+        if not route.get("upstream"): missing.append("upstream")
         
         if missing:
             print(f"  ✗ 路由 #{i+1} 缺少字段: {', '.join(missing)}", file=sys.stderr)
             sys.exit(1)
 except Exception as e:
-    print(f"ERROR: {e}", file=sys.stderr)
     sys.exit(1)
 PYTHON_SCRIPT
     else
@@ -314,14 +296,6 @@ validate_required_fields() {
             missing_fields=1
         fi
     done
-    
-    # 处理主配置文件（如果存在）
-    if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
-        if ! validate_file_required_fields "${CONFIG_DIR}/apisix.yaml"; then
-            ((ERRORS++))
-            missing_fields=1
-        fi
-    fi
     shopt -u nullglob
     
     if [ $missing_fields -eq 0 ]; then
@@ -339,21 +313,16 @@ main() {
     # 检查路由目录
     if [ ! -d "$ROUTES_DIR" ]; then
         echo -e "${YELLOW}⚠ 路由目录不存在: ${ROUTES_DIR}${NC}"
-        echo "创建目录..."
         mkdir -p "$ROUTES_DIR"
     fi
     
     # 检查是否有路由文件
     shopt -s nullglob
     local route_files=("${ROUTES_DIR}"/*.yaml)
-    if [ -f "${CONFIG_DIR}/apisix.yaml" ]; then
-        route_files+=("${CONFIG_DIR}/apisix.yaml")
-    fi
     shopt -u nullglob
     
     if [ ${#route_files[@]} -eq 0 ]; then
         echo -e "${YELLOW}⚠ 未找到路由配置文件${NC}"
-        echo "请先运行: make generate-route 或 ./scripts/sync-routes.sh"
         exit 0
     fi
     

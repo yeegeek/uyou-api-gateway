@@ -75,9 +75,15 @@ message GetUserResponse {
 }
 ```
 
-**最佳实践**:
+**最佳实践与约定**:
 - **明确的包名**: `package user;`
 - **正确的 `go_package`**: 指向你的 Go 模块路径。
+- **权限与频率控制 (基于魔术注释)**:
+    - **认证接口**: 在 RPC 定义上方添加 `// @auth` 注释。
+    - **限流控制**: 添加 `// @limit(rate=10, burst=20)`，其中 `rate` 为每秒请求数，`burst` 为最大突发请求数。
+    - **注意**: 方法名应始终保持 **PascalCase** (首字母大写)，以符合 Go 语言的导出规则。
+- **内部接口隔离**: 
+    - 如果某些接口仅供微服务间内部调用，不希望暴露给外部网关，请将其定义在以 `.internal.proto` 结尾的文件中 (例如 `user.internal.proto`)。网关部署脚本会自动忽略此类文件。
 - **清晰的注释**: 为每个服务和方法添加注释。
 - **版本兼容**: 只在末尾添加新字段, 不要修改现有字段的编号。
 
@@ -285,6 +291,15 @@ make run
    **关键点**:
    - `host.docker.internal`: 允许 Docker 容器 (APISIX) 访问宿主机上运行的服务。
    - `grpc-transcode`: APISIX 的核心插件, 负责协议转换。
+
+### 全局配置管理 (`global.yaml`)
+
+除了单个服务的路由, 网关的全局行为 (如 CORS、监控、消费者) 均在 `apisix/config/global.yaml` 中声明式管理:
+
+- **Global Rules**: 开启全局插件, 如 `cors` (跨域)、`prometheus` (监控)、`client-control` (负载限制)。
+- **Consumers**: 管理认证用户及其密钥 (如 JWT Secret)。
+
+修改该文件后, 运行 `make update-routes` 即可生效。
 
 4. **更新路由**: `make update-routes`
 
