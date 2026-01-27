@@ -113,13 +113,12 @@ curl -i -X POST http://localhost:9080/api/v1/users/register \
 - **[服务开发指南](./docs/SERVICE-GUIDE.md)**: 如何开发和构建你的微服务。
 - **[架构设计](./docs/ARCHITECTURE.md)**: 框架的核心设计理念。
 - **[生产部署](./docs/DEPLOYMENT.md)**: 如何将你的应用部署到生产环境。
+- **[故障排查指南](./docs/TROUBLESHOOTING.md)**: 常见问题和解决方案。
 
 ## 🤝 贡献
 
 欢迎提交 PR 和 Issue, 共同完善这个框架。
 
 ## License
-
-MIT
 
 MIT

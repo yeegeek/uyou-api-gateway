@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 	"{{MODULE_PATH}}/internal/model"
@@ -33,6 +34,12 @@ func NewPostgres(c *conf.Config, l *logger.Logger) (*PostgresRepository, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// 配置连接池
+	db.SetMaxOpenConns(25)                 // 最大打开连接数
+	db.SetMaxIdleConns(5)                  // 最大空闲连接数
+	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大生存时间
+	db.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接最大生存时间
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

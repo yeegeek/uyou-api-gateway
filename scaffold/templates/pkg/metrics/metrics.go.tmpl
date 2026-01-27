@@ -1,0 +1,44 @@
+package metrics
+
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	// RequestDuration 请求耗时（秒）
+	RequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "{{SERVICE_NAME}}_request_duration_seconds",
+			Help:    "Request duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
+	// RequestTotal 请求总数
+	RequestTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "{{SERVICE_NAME}}_requests_total",
+			Help: "Total number of requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	// RequestErrors 请求错误数
+	RequestErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "{{SERVICE_NAME}}_request_errors_total",
+			Help: "Total number of request errors",
+		},
+		[]string{"method", "error_type"},
+	)
+
+	// ActiveConnections 活跃连接数
+	ActiveConnections = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "{{SERVICE_NAME}}_active_connections",
+			Help: "Number of active connections",
+		},
+	)
+)

@@ -1,4 +1,4 @@
-.PHONY: proto build test clean docker-build run
+.PHONY: proto build test clean docker-build run migrate-up migrate-down migrate-create doc
 
 # 生成 Proto 代码
 proto:
@@ -18,6 +18,10 @@ run:
 test:
 	go test -v ./...
 
+# 集成测试
+test-integration:
+	go test -v -tags=integration ./...
+
 # 清理
 clean:
 	rm -rf bin/
@@ -25,3 +29,42 @@ clean:
 # Docker 构建
 docker-build:
 	docker build -t {{SERVICE_NAME}}:latest .
+
+# 数据库迁移 - 升级
+migrate-up:
+	@if command -v migrate > /dev/null; then \
+		migrate -path migrations -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)" up; \
+	else \
+		echo "⚠️  migrate 工具未安装，请安装: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"; \
+	fi
+
+# 数据库迁移 - 回滚
+migrate-down:
+	@if command -v migrate > /dev/null; then \
+		migrate -path migrations -database "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)" down 1; \
+	else \
+		echo "⚠️  migrate 工具未安装"; \
+	fi
+
+# 创建新的迁移文件
+migrate-create:
+	@if command -v migrate > /dev/null; then \
+		read -p "迁移名称: " name; \
+		migrate create -ext sql -dir migrations -seq $$name; \
+	else \
+		echo "⚠️  migrate 工具未安装"; \
+	fi
+
+# 生成 API 文档
+doc:
+	@if command -v protoc-gen-doc > /dev/null; then \
+		protoc --doc_out=./docs --doc_opt=markdown,api.md api/proto/*.proto; \
+		echo "✅ API 文档已生成: docs/api.md"; \
+	elif command -v buf > /dev/null; then \
+		buf generate --template buf.gen.doc.yaml; \
+		echo "✅ API 文档已生成"; \
+	else \
+		echo "⚠️  未找到文档生成工具"; \
+		echo "   安装 protoc-gen-doc: go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@latest"; \
+		echo "   或安装 buf: https://buf.build/docs/installation"; \
+	fi

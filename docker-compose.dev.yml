@@ -87,6 +87,10 @@ services:
   apisix:
     image: apache/apisix:3.8.0-debian
     container_name: uyou-apisix-dev
+    env_file:
+      - .env
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
     volumes:
       - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
     ports:
@@ -108,6 +112,8 @@ services:
       context: ./services/user
       dockerfile: Dockerfile
     container_name: uyou-user-dev
+    env_file:
+      - .env
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -117,8 +123,10 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
     ports:
-      - "50051:50051"
+      - "50051:50051"  # gRPC 端口
+      - "51051:51051"  # HTTP 健康检查和 Prometheus 指标端口
     depends_on:
       - postgres
       - redis

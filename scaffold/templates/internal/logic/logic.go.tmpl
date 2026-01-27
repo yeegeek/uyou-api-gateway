@@ -2,6 +2,9 @@ package logic
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"strings"
 	"time"
 
 	"{{MODULE_PATH}}/internal/model"
@@ -27,6 +30,9 @@ func New(c *conf.Config, l *logger.Logger, r *repository.Repository) *Logic {
 
 // Create{{SERVICE_TITLE}} 创建{{SERVICE_NAME}}
 func (l *Logic) Create{{SERVICE_TITLE}}(ctx context.Context, name string) (int64, error) {
+	if strings.TrimSpace(name) == "" {
+		return 0, errno.InvalidArgument.WithMessage("name is required")
+	}
 	l.log.Info("Creating {{SERVICE_NAME}}", logger.String("name", name))
 	
 	item := &model.{{SERVICE_TITLE}}{
@@ -37,7 +43,7 @@ func (l *Logic) Create{{SERVICE_TITLE}}(ctx context.Context, name string) (int64
 	
 	if err := l.repo.Create{{SERVICE_TITLE}}(ctx, item); err != nil {
 		l.log.Error("Failed to create {{SERVICE_NAME}}", logger.Error(err))
-		return 0, errno.InternalError
+		return 0, l.handleError(err)
 	}
 	
 	return item.ID, nil
@@ -47,7 +53,7 @@ func (l *Logic) Create{{SERVICE_TITLE}}(ctx context.Context, name string) (int64
 func (l *Logic) Get{{SERVICE_TITLE}}(ctx context.Context, id int64) (*model.{{SERVICE_TITLE}}, error) {
 	item, err := l.repo.Get{{SERVICE_TITLE}}ByID(ctx, id)
 	if err != nil {
-		return nil, errno.InternalError
+		return nil, l.handleError(err)
 	}
 	if item == nil {
 		return nil, errno.NotFound.WithMessage("{{SERVICE_NAME}} not found")
@@ -57,9 +63,12 @@ func (l *Logic) Get{{SERVICE_TITLE}}(ctx context.Context, id int64) (*model.{{SE
 
 // Update{{SERVICE_TITLE}} 更新{{SERVICE_NAME}}
 func (l *Logic) Update{{SERVICE_TITLE}}(ctx context.Context, id int64, name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errno.InvalidArgument.WithMessage("name is required")
+	}
 	item, err := l.repo.Get{{SERVICE_TITLE}}ByID(ctx, id)
 	if err != nil {
-		return errno.InternalError
+		return l.handleError(err)
 	}
 	if item == nil {
 		return errno.NotFound.WithMessage("{{SERVICE_NAME}} not found")
@@ -69,7 +78,7 @@ func (l *Logic) Update{{SERVICE_TITLE}}(ctx context.Context, id int64, name stri
 	item.UpdatedAt = time.Now()
 	
 	if err := l.repo.Update{{SERVICE_TITLE}}(ctx, item); err != nil {
-		return errno.InternalError
+		return l.handleError(err)
 	}
 	return nil
 }
@@ -77,12 +86,43 @@ func (l *Logic) Update{{SERVICE_TITLE}}(ctx context.Context, id int64, name stri
 // Delete{{SERVICE_TITLE}} 删除{{SERVICE_NAME}}
 func (l *Logic) Delete{{SERVICE_TITLE}}(ctx context.Context, id int64) error {
 	if err := l.repo.Delete{{SERVICE_TITLE}}(ctx, id); err != nil {
-		return errno.InternalError
+		return l.handleError(err)
 	}
 	return nil
 }
 
 // List{{SERVICE_TITLE}}s 列表{{SERVICE_NAME}} (简单实现)
 func (l *Logic) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize int) ([]*model.{{SERVICE_TITLE}}, int64, error) {
-	return l.repo.List{{SERVICE_TITLE}}s(ctx, page, pageSize)
+	items, total, err := l.repo.List{{SERVICE_TITLE}}s(ctx, page, pageSize)
+	if err != nil {
+		return nil, 0, l.handleError(err)
+	}
+	return items, total, nil
+}
+
+// handleError 根据错误类型返回具体的错误码
+func (l *Logic) handleError(err error) error {
+	if err == nil {
+		return nil
+	}
+	
+	// 处理 SQL 错误
+	if errors.Is(err, sql.ErrNoRows) {
+		return errno.NotFound
+	}
+	
+	// 处理 PostgreSQL 错误（需要导入 github.com/lib/pq）
+	// 这里提供一个通用的错误处理示例
+	// 在实际使用 PostgreSQL 时，可以检查错误代码：
+	// if pqErr, ok := err.(*pq.Error); ok {
+	//     switch pqErr.Code {
+	//     case "23505": // unique_violation
+	//         return errno.AlreadyExists.WithMessage(pqErr.Message)
+	//     case "23503": // foreign_key_violation
+	//         return errno.InvalidArgument.WithMessage("Foreign key constraint violation")
+	//     }
+	// }
+	
+	// 默认返回内部错误
+	return errno.InternalError.WithMessage(err.Error())
 }

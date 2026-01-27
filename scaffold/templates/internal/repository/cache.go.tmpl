@@ -1,0 +1,88 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// CacheRepository Redis 缓存实现示例
+// 这是一个装饰器模式的示例，可以包装其他 repository 实现缓存功能
+type CacheRepository struct {
+	client *redis.Client
+	log    *logger.Logger
+	prefix string
+}
+
+// NewCache 创建 Redis 缓存实例
+func NewCache(c *conf.Config, l *logger.Logger) (*CacheRepository, error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", c.Redis.Host, c.Redis.Port),
+		Password: c.Redis.Password,
+		DB:       c.Redis.DB,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	}
+
+	l.Info("Connected to Redis",
+		logger.String("host", c.Redis.Host),
+		logger.Int("port", c.Redis.Port),
+		logger.Int("db", c.Redis.DB),
+	)
+
+	return &CacheRepository{
+		client: client,
+		log:    l,
+		prefix: "{{CACHE_PREFIX}}:",
+	}, nil
+}
+
+// Get 从缓存获取数据
+func (r *CacheRepository) Get(ctx context.Context, key string, dest interface{}) error {
+	fullKey := r.prefix + key
+	val, err := r.client.Get(ctx, fullKey).Result()
+	if err == redis.Nil {
+		return nil // 缓存未命中，返回 nil 而不是错误
+	}
+	if err != nil {
+		return fmt.Errorf("redis get error: %w", err)
+	}
+
+	if err := json.Unmarshal([]byte(val), dest); err != nil {
+		return fmt.Errorf("json unmarshal error: %w", err)
+	}
+
+	return nil
+}
+
+// Set 设置缓存
+func (r *CacheRepository) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	fullKey := r.prefix + key
+	val, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("json marshal error: %w", err)
+	}
+
+	return r.client.Set(ctx, fullKey, val, expiration).Err()
+}
+
+// Delete 删除缓存
+func (r *CacheRepository) Delete(ctx context.Context, key string) error {
+	fullKey := r.prefix + key
+	return r.client.Del(ctx, fullKey).Err()
+}
+
+// Close 关闭 Redis 连接
+func (r *CacheRepository) Close() error {
+	return r.client.Close()
+}

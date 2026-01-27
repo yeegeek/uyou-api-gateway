@@ -124,11 +124,31 @@ sync_global_config() {
         done
     fi
     
-    # 同步 Consumers
+    # 同步 Consumers（以 Consumer.plugins.jwt-auth 的方式配置，适配 APISIX 3.8）
     local consumer_names=$(yq eval '.consumers[].username' "$global_yaml" 2>/dev/null)
     if [ -n "$consumer_names" ] && [ "$consumer_names" != "null" ]; then
+        # 从环境变量读取 JWT_SECRET，如果不存在则使用配置文件中的值
+        local jwt_secret="${JWT_SECRET:-$(yq eval '.consumers[0].plugins."jwt-auth".secret' "$global_yaml" 2>/dev/null)}"
+        if [ -z "$jwt_secret" ] || [ "$jwt_secret" = "null" ]; then
+            jwt_secret="uyou_secret_key_2026"  # 默认值
+        fi
+
         for cname in $consumer_names; do
-            local consumer_json=$(yq eval ".consumers[] | select(.username == \"$cname\") | del(.username)" -o=json "$global_yaml")
+            # 取出 consumer 完整定义（包含 username 与 plugins）
+            local consumer_json=$(yq eval ".consumers[] | select(.username == \"$cname\")" -o=json "$global_yaml" 2>/dev/null)
+            [ -z "$consumer_json" ] || [ "$consumer_json" = "null" ] && continue
+
+            # 如果 consumer 有 jwt-auth 插件，更新 secret（从环境变量注入）
+            if echo "$consumer_json" | grep -q "\"jwt-auth\""; then
+                consumer_json=$(echo "$consumer_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if 'plugins' in data and 'jwt-auth' in data['plugins']:
+    data['plugins']['jwt-auth']['secret'] = sys.argv[1]
+print(json.dumps(data))
+" "$jwt_secret")
+            fi
+
             curl -s -X PUT "${GATEWAY_URL}/apisix/admin/consumers/${cname}" \
                 -H "X-API-KEY: ${ADMIN_KEY}" -H "Content-Type: application/json" -d "${consumer_json}" > /dev/null
             echo -e "  ${GREEN}✓ consumers/${cname} 同步成功${NC}"

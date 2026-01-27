@@ -1,0 +1,48 @@
+// +build integration
+
+package internal
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"{{MODULE_PATH}}/internal/app"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+// 集成测试示例
+// 运行集成测试: go test -tags=integration ./...
+
+func TestIntegration_CreateAndGet{{SERVICE_TITLE}}(t *testing.T) {
+	// 加载配置
+	c := conf.Load()
+	
+	// 初始化日志
+	log := logger.New("debug", "console")
+	
+	// 创建应用实例
+	application, err := app.New(c, log)
+	if err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+	
+	// 这里可以添加实际的集成测试逻辑
+	// 例如：测试完整的创建和获取流程
+	ctx := context.Background()
+	
+	// 注意：集成测试需要真实的数据库连接
+	// 确保测试环境已启动数据库服务
+	t.Log("Integration test setup complete")
+	
+	// 示例：测试超时
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	
+	// 在这里添加实际的测试逻辑
+	_ = application
+	_ = ctx
+	
+	t.Log("Integration test passed")
+}

@@ -1,6 +1,8 @@
 package conf
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -63,7 +65,47 @@ func Load() *Config {
 
 	conf := &Config{}
 	if err := v.Unmarshal(conf); err != nil {
-		panic(err)
+		panic(fmt.Sprintf("failed to unmarshal config: %v", err))
 	}
+	
+	// 优先从环境变量读取 JWT Secret
+	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
+		conf.JWT.Secret = jwtSecret
+	}
+	
+	// 验证配置
+	if err := conf.Validate(); err != nil {
+		panic(fmt.Sprintf("config validation failed: %v", err))
+	}
+	
 	return conf
+}
+
+// Validate 验证配置的必需字段
+func (c *Config) Validate() error {
+	// 验证服务器配置
+	if c.Server.GRPCPort <= 0 || c.Server.GRPCPort > 65535 {
+		return fmt.Errorf("invalid grpc_port: %d (must be between 1 and 65535)", c.Server.GRPCPort)
+	}
+	if c.Server.HTTPPort <= 0 || c.Server.HTTPPort > 65535 {
+		return fmt.Errorf("invalid http_port: %d (must be between 1 and 65535)", c.Server.HTTPPort)
+	}
+	
+	// 验证 JWT Secret
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("jwt.secret is required")
+	}
+	if len(c.JWT.Secret) < 16 {
+		return fmt.Errorf("jwt.secret is too short (minimum 16 characters)")
+	}
+	
+	// 验证日志配置
+	if c.Log.Level != "" {
+		validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+		if !validLevels[c.Log.Level] {
+			return fmt.Errorf("invalid log.level: %s (must be debug, info, warn, or error)", c.Log.Level)
+		}
+	}
+	
+	return nil
 }

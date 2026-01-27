@@ -1,6 +1,8 @@
 package app
 
 import (
+	"path/filepath"
+
 	"google.golang.org/grpc"
 	"{{MODULE_PATH}}/pkg/conf"
 	"{{MODULE_PATH}}/pkg/logger"
@@ -18,13 +20,20 @@ type App struct {
 }
 
 func New(c *conf.Config, l *logger.Logger) (*App, error) {
-	// 1. 初始化 Repository
+	// 1. 解析 proto 文件，注册需要认证的方法
+	protoDir := filepath.Join(".", "api", "proto")
+	if err := middleware.ParseProtoForAuth(protoDir, "{{SERVICE_NAME}}"); err != nil {
+		// 如果解析失败，记录警告但不阻止启动
+		l.Warn("Failed to parse proto files for auth", logger.Error(err))
+	}
+
+	// 2. 初始化 Repository
 	repo, err := repository.New(c, l)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 初始化 Logic
+	// 3. 初始化 Logic
 	lgc := logic.New(c, l, repo)
 
 	return &App{

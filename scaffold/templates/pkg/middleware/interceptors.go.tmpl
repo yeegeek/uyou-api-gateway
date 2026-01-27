@@ -3,6 +3,8 @@ package middleware
 import (
 	"context"
 	"runtime/debug"
+	"strings"
+	"sync"
 	"time"
 
 	"{{MODULE_PATH}}/pkg/logger"
@@ -14,6 +16,27 @@ import (
 	"google.golang.org/grpc/status"
 	"go.uber.org/zap"
 )
+
+// authRequiredMethods 存储需要认证的方法集合
+// 格式: "package.Service/Method" -> true
+var (
+	authRequiredMethods = make(map[string]bool)
+	authMethodsMu       sync.RWMutex
+)
+
+// RegisterAuthMethod 注册需要认证的方法
+func RegisterAuthMethod(fullMethod string) {
+	authMethodsMu.Lock()
+	defer authMethodsMu.Unlock()
+	authRequiredMethods[fullMethod] = true
+}
+
+// IsAuthRequired 检查方法是否需要认证
+func IsAuthRequired(fullMethod string) bool {
+	authMethodsMu.RLock()
+	defer authMethodsMu.RUnlock()
+	return authRequiredMethods[fullMethod]
+}
 
 // UnaryRecoveryInterceptor handles panic recovery
 func UnaryRecoveryInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
@@ -56,46 +79,70 @@ func UnaryLoggingInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
 }
 
 // UnaryAuthInterceptor extracts user ID from JWT token in metadata.
+// 只有标记了 @auth 的方法才会进行 JWT 验证。
 func UnaryAuthInterceptor(secret string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// 检查方法是否需要认证
+		if !IsAuthRequired(info.FullMethod) {
+			// 不需要认证的方法，直接通过
+			return handler(ctx, req)
+		}
+
+		// 需要认证的方法，验证 JWT
 		md, ok := metadata.FromIncomingContext(ctx)
-		if ok {
-			var tokenString string
-			
-			// 1. Try standard Authorization header
-			authHeader := md.Get("authorization")
-			if len(authHeader) > 0 {
-				tokenString = authHeader[0]
-				if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
-					tokenString = tokenString[7:]
-				}
-			}
+		if !ok {
+			return nil, status.Errorf(codes.Unauthenticated, "missing metadata")
+		}
 
-			// 2. Try x-user-id (if acting as token carrier per user feedback)
-			if tokenString == "" {
-				vals := md.Get("x-user-id")
-				if len(vals) > 0 {
-					tokenString = vals[0]
-				}
-			}
-
-			if tokenString != "" {
-				token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-					return []byte(secret), nil
-				})
-
-				if err == nil && token.Valid {
-					if claims, ok := token.Claims.(jwt.MapClaims); ok {
-						if userID, ok := claims["user_id"].(string); ok {
-							ctx = context.WithValue(ctx, ctxout.KeyUserID, userID)
-						} else if sub, ok := claims["sub"].(string); ok {
-							// Fallback to sub as user ID
-							ctx = context.WithValue(ctx, ctxout.KeyUserID, sub)
-						}
-					}
-				}
+		var tokenString string
+		
+		// 1. Try standard Authorization header
+		authHeader := md.Get("authorization")
+		if len(authHeader) > 0 {
+			tokenString = authHeader[0]
+			if len(tokenString) > 7 && strings.HasPrefix(tokenString, "Bearer ") {
+				tokenString = tokenString[7:]
 			}
 		}
+
+		// 2. Try x-user-id (if acting as token carrier per user feedback)
+		if tokenString == "" {
+			vals := md.Get("x-user-id")
+			if len(vals) > 0 {
+				tokenString = vals[0]
+			}
+		}
+
+		if tokenString == "" {
+			return nil, status.Errorf(codes.Unauthenticated, "missing authorization token")
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// 验证签名算法
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, status.Errorf(codes.Unauthenticated, "unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(secret), nil
+		})
+
+		if err != nil {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+		}
+
+		if !token.Valid {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid token")
+		}
+
+		// 提取用户 ID
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if userID, ok := claims["user_id"].(string); ok {
+				ctx = context.WithValue(ctx, ctxout.KeyUserID, userID)
+			} else if sub, ok := claims["sub"].(string); ok {
+				// Fallback to sub as user ID
+				ctx = context.WithValue(ctx, ctxout.KeyUserID, sub)
+			}
+		}
+
 		return handler(ctx, req)
 	}
 }

@@ -9,7 +9,9 @@ redis:
   password: ""
 
 jwt:
-  secret: your-jwt-secret-key-change-in-production
+  # JWT Secret - 优先从环境变量 JWT_SECRET 读取
+  # 如果环境变量不存在，则使用此值（仅用于开发环境）
+  secret: uyou_secret_key_2026
 
 log:
   level: info

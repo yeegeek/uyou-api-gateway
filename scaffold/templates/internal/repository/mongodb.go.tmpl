@@ -24,17 +24,26 @@ type MongoRepository struct {
 
 // NewMongo 创建 MongoDB 仓库实例
 func NewMongo(c *conf.Config, l *logger.Logger) (*MongoRepository, error) {
-	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d",
+	uri := fmt.Sprintf("mongodb://%s:%s@%s:%d/%s",
 		c.Database.User,
 		c.Database.Password,
 		c.Database.Host,
 		c.Database.Port,
+		c.Database.DBName,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	// 配置连接池选项
+	clientOptions := options.Client().ApplyURI(uri).
+		SetMaxPoolSize(100).              // 最大连接池大小
+		SetMinPoolSize(10).               // 最小连接池大小
+		SetMaxConnIdleTime(30 * time.Second). // 连接最大空闲时间
+		SetConnectTimeout(10 * time.Second).  // 连接超时
+		SetSocketTimeout(30 * time.Second)    // Socket 超时
+
+	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}

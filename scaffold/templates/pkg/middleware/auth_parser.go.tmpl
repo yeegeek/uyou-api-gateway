@@ -1,0 +1,71 @@
+package middleware
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+// ParseProtoForAuth 解析 proto 文件，注册需要认证的方法
+// 方法格式: package.Service/Method
+func ParseProtoForAuth(protoDir string, serviceName string) error {
+	protoFiles, err := filepath.Glob(filepath.Join(protoDir, "*.proto"))
+	if err != nil {
+		return err
+	}
+
+	// 排除 internal.proto 文件
+	var publicProtoFiles []string
+	for _, f := range protoFiles {
+		if !strings.Contains(filepath.Base(f), ".internal.proto") {
+			publicProtoFiles = append(publicProtoFiles, f)
+		}
+	}
+
+	// 正则表达式匹配 RPC 方法和 @auth 注释
+	// 匹配格式: // @auth 或 //@auth (可选空格)
+	// 后面跟着 rpc MethodName
+	commentPattern := regexp.MustCompile(`(?m)((?://[^\n]*\n\s*)*)rpc\s+(\w+)\s*\(`)
+
+	for _, protoFile := range publicProtoFiles {
+		content, err := os.ReadFile(protoFile)
+		if err != nil {
+			continue // 跳过无法读取的文件
+		}
+
+		// 提取包名
+		packageMatch := regexp.MustCompile(`package\s+(\w+)\s*;`)
+		packageName := packageMatch.FindStringSubmatch(string(content))
+		if len(packageName) < 2 {
+			packageName = []string{"", serviceName} // 默认使用服务名
+		}
+
+		// 查找所有 RPC 方法及其注释
+		matches := commentPattern.FindAllStringSubmatch(string(content), -1)
+		for _, match := range matches {
+			if len(match) < 3 {
+				continue
+			}
+
+			commentBlock := match[1]
+			methodName := match[2]
+
+			// 检查注释中是否包含 @auth
+			if strings.Contains(commentBlock, "@auth") {
+				// 注册需要认证的方法
+				// 格式: /package.Service/Method
+				// 将 serviceName 首字母大写
+				serviceTitle := ""
+				if len(serviceName) > 0 {
+					serviceTitle = string(unicode.ToUpper(rune(serviceName[0]))) + serviceName[1:]
+				}
+				fullMethod := "/" + packageName[1] + "." + serviceTitle + "Service/" + methodName
+				RegisterAuthMethod(fullMethod)
+			}
+		}
+	}
+
+	return nil
+}

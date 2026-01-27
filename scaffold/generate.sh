@@ -56,21 +56,44 @@ replace_vars() {
     local file="$1"
     local tmp_file="${file}.tmp"
     
-    # 使用 sed 进行变量替换
+    # 转义特殊字符以避免 sed 解析错误
+    local service_name=$(printf '%s\n' "$SERVICE_NAME" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    local service_title=$(printf '%s\n' "$SERVICE_TITLE" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    local service_name_upper=$(printf '%s\n' "$SERVICE_NAME_UPPER" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    local module_path=$(printf '%s\n' "$MODULE_PATH" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    
+    # 使用 sed 进行变量替换（使用 | 作为分隔符以避免路径中的 / 冲突）
     sed \
-        -e "s|{{SERVICE_NAME}}|$SERVICE_NAME|g" \
-        -e "s|{{SERVICE_TITLE}}|$SERVICE_TITLE|g" \
-        -e "s|{{SERVICE_NAME_UPPER}}|$SERVICE_NAME_UPPER|g" \
-        -e "s|{{MODULE_PATH}}|$MODULE_PATH|g" \
-        -e "s|{{GRPC_PORT}}|$GRPC_PORT|g" \
-        -e "s|{{HTTP_PORT}}|$HTTP_PORT|g" \
-        -e "s|{{DB_NAME}}|$DB_NAME|g" \
-        -e "s|{{TABLE_NAME}}|$TABLE_NAME|g" \
-        -e "s|{{REDIS_DB}}|$REDIS_DB|g" \
-        -e "s|{{CACHE_PREFIX}}|$CACHE_PREFIX|g" \
-        -e "s|{{DB_TYPE_DESC}}|$DB_TYPE_DESC|g" \
-        -e "s|{{DB_REQUIRE}}|$DB_REQUIRE|g" \
-        "$file" > "$tmp_file"
+        -e "s|{{SERVICE_NAME}}|${service_name}|g" \
+        -e "s|{{SERVICE_TITLE}}|${service_title}|g" \
+        -e "s|{{SERVICE_NAME_UPPER}}|${service_name_upper}|g" \
+        -e "s|{{MODULE_PATH}}|${module_path}|g" \
+        -e "s|{{GRPC_PORT}}|${GRPC_PORT}|g" \
+        -e "s|{{HTTP_PORT}}|${HTTP_PORT}|g" \
+        -e "s|{{DB_NAME}}|${DB_NAME}|g" \
+        -e "s|{{TABLE_NAME}}|${TABLE_NAME}|g" \
+        -e "s|{{REDIS_DB}}|${REDIS_DB}|g" \
+        -e "s|{{CACHE_PREFIX}}|${CACHE_PREFIX}|g" \
+        -e "s|{{DB_TYPE_DESC}}|${DB_TYPE_DESC}|g" \
+        -e "s|{{DB_REQUIRE}}|${DB_REQUIRE}|g" \
+        "$file" > "$tmp_file" 2>/dev/null || {
+        # 如果 sed 失败，使用更简单的方法（逐行处理）
+        while IFS= read -r line || [ -n "$line" ]; do
+            line="${line//{{SERVICE_NAME}}/$SERVICE_NAME}"
+            line="${line//{{SERVICE_TITLE}}/$SERVICE_TITLE}"
+            line="${line//{{SERVICE_NAME_UPPER}}/$SERVICE_NAME_UPPER}"
+            line="${line//{{MODULE_PATH}}/$MODULE_PATH}"
+            line="${line//{{GRPC_PORT}}/$GRPC_PORT}"
+            line="${line//{{HTTP_PORT}}/$HTTP_PORT}"
+            line="${line//{{DB_NAME}}/$DB_NAME}"
+            line="${line//{{TABLE_NAME}}/$TABLE_NAME}"
+            line="${line//{{REDIS_DB}}/$REDIS_DB}"
+            line="${line//{{CACHE_PREFIX}}/$CACHE_PREFIX}"
+            line="${line//{{DB_TYPE_DESC}}/$DB_TYPE_DESC}"
+            line="${line//{{DB_REQUIRE}}/$DB_REQUIRE}"
+            echo "$line"
+        done < "$file" > "$tmp_file"
+    }
     
     mv "$tmp_file" "$file"
 }
@@ -217,6 +240,8 @@ generate_service() {
     copy_template "$TEMPLATES_DIR/pkg/errno/errno.go.tmpl" "$SERVICE_DIR/pkg/errno/errno.go"
     copy_template "$TEMPLATES_DIR/pkg/ctxout/ctxout.go.tmpl" "$SERVICE_DIR/pkg/ctxout/ctxout.go"
     copy_template "$TEMPLATES_DIR/pkg/middleware/interceptors.go.tmpl" "$SERVICE_DIR/pkg/middleware/interceptors.go"
+    copy_template "$TEMPLATES_DIR/pkg/middleware/auth_parser.go.tmpl" "$SERVICE_DIR/pkg/middleware/auth_parser.go"
+    copy_template "$TEMPLATES_DIR/pkg/metrics/metrics.go.tmpl" "$SERVICE_DIR/pkg/metrics/metrics.go"
     
     # 复制 internal 模板
     copy_template "$TEMPLATES_DIR/internal/app/app.go.tmpl" "$SERVICE_DIR/internal/app/app.go"
@@ -224,6 +249,14 @@ generate_service() {
     copy_template "$TEMPLATES_DIR/internal/repository/repository.go.tmpl" "$SERVICE_DIR/internal/repository/repository.go"
     copy_template "$TEMPLATES_DIR/internal/delivery/handler.go.tmpl" "$SERVICE_DIR/internal/delivery/handler.go"
     copy_template "$TEMPLATES_DIR/internal/delivery/internal.go.tmpl" "$SERVICE_DIR/internal/delivery/internal.go"
+    
+    # 复制测试模板
+    copy_template "$TEMPLATES_DIR/internal/logic/logic_test.go.tmpl" "$SERVICE_DIR/internal/logic/logic_test.go"
+    copy_template "$TEMPLATES_DIR/internal/repository/repository_test.go.tmpl" "$SERVICE_DIR/internal/repository/repository_test.go"
+    copy_template "$TEMPLATES_DIR/internal/integration_test.go.tmpl" "$SERVICE_DIR/internal/integration_test.go"
+    
+    # 复制 Redis 缓存实现（可选使用）
+    copy_template "$TEMPLATES_DIR/internal/repository/cache.go.tmpl" "$SERVICE_DIR/internal/repository/cache.go"
     
     # 复制数据库特定的 repository 实现 (可选使用)
     if [ "$DB_TYPE" = "postgres" ]; then
@@ -276,6 +309,8 @@ update_dev_compose() {
         echo "      context: ./services/${SERVICE_NAME}"
         echo "      dockerfile: Dockerfile"
         echo "    container_name: uyou-${SERVICE_NAME}-dev"
+        echo "    env_file:"
+        echo "      - .env"
         echo "    environment:"
         
         if [ "$DB_TYPE" = "postgres" ]; then
@@ -295,6 +330,7 @@ update_dev_compose() {
         echo "      REDIS_HOST: redis"
         echo "      REDIS_PORT: 6379"
         echo "      REDIS_DB: ${REDIS_DB}"
+        echo "      JWT_SECRET: \${JWT_SECRET:-uyou_secret_key_2026}"
         echo "    ports:"
         echo "      - \"${GRPC_PORT}:${GRPC_PORT}\""
         echo "    depends_on:"

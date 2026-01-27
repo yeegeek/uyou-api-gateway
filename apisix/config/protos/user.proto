@@ -7,6 +7,7 @@ option go_package = "github.com/yeegeek/uyou-user-service/api/proto";
 // User Service
 service UserService {
   // 创建User
+  // @auth
   // @limit(rate=5, burst=10)
   rpc Create(CreateUserRequest) returns (CreateUserResponse);
   

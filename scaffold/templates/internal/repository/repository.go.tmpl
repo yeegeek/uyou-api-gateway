@@ -72,10 +72,46 @@ func (r *Repository) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	
-	var items []*model.{{SERVICE_TITLE}}
-	for _, item := range r.data {
-		items = append(items, item)
+	// 参数验证
+	if page < 1 {
+		page = 1
 	}
-	// In a real implementation, you would apply pagination here
-	return items, int64(len(items)), nil
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100 // 限制最大页面大小
+	}
+	
+	// 获取总数
+	total := int64(len(r.data))
+	
+	// 转换为切片并排序（按 ID 降序）
+	var allItems []*model.{{SERVICE_TITLE}}
+	for _, item := range r.data {
+		allItems = append(allItems, item)
+	}
+	
+	// 简单排序：按 ID 降序
+	for i := 0; i < len(allItems)-1; i++ {
+		for j := i + 1; j < len(allItems); j++ {
+			if allItems[i].ID < allItems[j].ID {
+				allItems[i], allItems[j] = allItems[j], allItems[i]
+			}
+		}
+	}
+	
+	// 计算分页范围
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	
+	if start >= len(allItems) {
+		return []*model.{{SERVICE_TITLE}}{}, total, nil
+	}
+	
+	if end > len(allItems) {
+		end = len(allItems)
+	}
+	
+	return allItems[start:end], total, nil
 }

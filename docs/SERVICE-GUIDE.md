@@ -102,16 +102,16 @@ make proto
 
 ```
 internal/
-├── handler/         # gRPC 处理器 (接收请求, 调用 Service)
-├── service/         # 业务逻辑核心 (处理业务, 调用 Repository)
+├── delivery/        # gRPC 处理器 (接收请求, 调用 Logic)
+├── logic/           # 业务逻辑核心 (处理业务, 调用 Repository)
 └── repository/      # 数据访问层 (与数据库、缓存交互)
 ```
 
 ### Handler (处理器)
 
-`handler` 层负责处理 gRPC 请求, 验证输入, 并调用 `service` 层。
+`delivery` 层负责处理 gRPC 请求, 验证输入, 并调用 `logic` 层。
 
-在 `internal/handler/handler.go` 中:
+在 `internal/delivery/handler.go` 中:
 
 ```go
 package handler
@@ -219,7 +219,9 @@ func (r *userRepository) Create(ctx context.Context, name string) (int64, error)
 
 ## 4. 第三步：配置服务
 
-所有配置都应通过 `config/config.yaml` 文件管理, 并使用 Viper 库加载。
+所有配置都应通过 `config/config.yaml` 文件管理, 并使用 Viper 库加载。配置系统支持环境变量覆盖，优先从环境变量读取。
+
+### 4.1 配置文件
 
 ```yaml
 # config/config.yaml
@@ -237,9 +239,47 @@ database:
 redis:
   host: localhost
   port: 6379
+
+jwt:
+  secret: uyou_secret_key_2026  # 优先从环境变量 JWT_SECRET 读取
+
+log:
+  level: info
+  format: json
 ```
 
-在 `cmd/server/main.go` 中加载配置, 并通过依赖注入将数据库连接、服务等传递给 `handler`。
+### 4.2 环境变量
+
+所有配置项都可以通过环境变量覆盖。环境变量命名规则：
+- 使用 `{{SERVICE_NAME_UPPER}}_` 作为前缀（例如：`USER_`）
+- 将配置路径中的 `.` 替换为 `_`
+- 转换为大写
+
+**完整环境变量列表**:
+
+| 环境变量 | 说明 | 默认值 | 示例 |
+|---------|------|--------|------|
+| `{{SERVICE_NAME_UPPER}}_SERVER_GRPC_PORT` | gRPC 服务端口 | 50051 | 50051 |
+| `{{SERVICE_NAME_UPPER}}_SERVER_HTTP_PORT` | HTTP 健康检查端口 | 51051 | 51051 |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_HOST` | 数据库主机 | localhost | postgres |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_PORT` | 数据库端口 | 5432 | 5432 |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_USER` | 数据库用户名 | postgres | postgres |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_PASSWORD` | 数据库密码 | - | postgres |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_DBNAME` | 数据库名称 | - | userdb |
+| `{{SERVICE_NAME_UPPER}}_DATABASE_SSLMODE` | SSL 模式 | disable | disable |
+| `{{SERVICE_NAME_UPPER}}_REDIS_HOST` | Redis 主机 | localhost | redis |
+| `{{SERVICE_NAME_UPPER}}_REDIS_PORT` | Redis 端口 | 6379 | 6379 |
+| `{{SERVICE_NAME_UPPER}}_REDIS_DB` | Redis 数据库编号 | 0 | 0 |
+| `{{SERVICE_NAME_UPPER}}_REDIS_PASSWORD` | Redis 密码 | - | - |
+| `JWT_SECRET` | JWT 密钥（全局，所有服务共享） | uyou_secret_key_2026 | your-secret-key |
+| `{{SERVICE_NAME_UPPER}}_LOG_LEVEL` | 日志级别 | info | debug, info, warn, error |
+| `{{SERVICE_NAME_UPPER}}_LOG_FORMAT` | 日志格式 | json | json, console |
+
+**特殊说明**:
+- `JWT_SECRET`: 这是一个全局环境变量，不需要服务名前缀。APISIX 和所有微服务都使用此变量来同步 JWT 密钥。
+- 在 `docker-compose.dev.yml` 中，所有服务都会自动从 `.env` 文件读取 `JWT_SECRET`。
+
+在 `cmd/server/main.go` 中加载配置, 并通过依赖注入将数据库连接、服务等传递给 `delivery`。
 
 ## 5. 第四步：本地运行与调试
 

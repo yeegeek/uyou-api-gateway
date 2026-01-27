@@ -1,0 +1,41 @@
+# 数据库迁移
+
+本目录包含数据库迁移脚本。
+
+## 使用 migrate 工具
+
+### 安装
+
+```bash
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+```
+
+### 创建迁移文件
+
+```bash
+make migrate-create
+# 输入迁移名称，例如: add_user_email_index
+```
+
+### 执行迁移
+
+```bash
+# 升级到最新版本
+make migrate-up
+
+# 回滚一个版本
+make migrate-down
+```
+
+### 迁移文件命名
+
+迁移文件使用以下命名格式：
+- `000001_<name>.up.sql` - 升级脚本
+- `000001_<name>.down.sql` - 回滚脚本
+
+### 注意事项
+
+1. 迁移文件一旦提交到版本控制，**不要修改**。
+2. 如果需要修改，创建新的迁移文件。
+3. 确保迁移脚本是**幂等**的（可以安全地重复执行）。
+4. 在生产环境执行迁移前，**务必在测试环境验证**。

@@ -171,6 +171,6 @@ HTTP/1.1 200 OK
 
 接下来, 你可以:
 - 在 `services/user/api/proto/user.proto` 中添加更多 RPC 方法。
-- 在 `services/user/internal/handler` 目录中实现这些方法的逻辑。
+- 在 `services/user/internal/delivery` 目录中实现这些方法的逻辑。
 - 在 `apisix/config/routes/user-routes.yaml` 中添加更多路由规则。
 - 每次修改代码后, `docker-compose.dev.yml` 会自动重新构建并启动你的服务。

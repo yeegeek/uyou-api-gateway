@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -15,6 +18,7 @@ import (
 	"{{MODULE_PATH}}/internal/app"
 	"{{MODULE_PATH}}/pkg/conf"
 	"{{MODULE_PATH}}/pkg/logger"
+	_ "{{MODULE_PATH}}/pkg/metrics" // 初始化 Prometheus 指标
 )
 
 func main() {
@@ -31,7 +35,7 @@ func main() {
 	}
 
 	// 4. 启动健康检查 HTTP 服务器
-	go startHealthServer(c.Server.HTTPPort, log)
+	healthServer := startHealthServer(c.Server.HTTPPort, log)
 
 	// 5. 启动 gRPC 服务器
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", c.Server.GRPCPort))
@@ -44,20 +48,37 @@ func main() {
 	)
 	
 	// 注册健康检查服务
-	healthServer := health.NewServer()
-	grpc_health_v1.RegisterHealthServer(s, healthServer)
-	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpcHealthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(s, grpcHealthServer)
+	grpcHealthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	
 	// 注册业务服务
 	application.RegisterServers(s)
 
 	// 优雅中止处理
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		<-sigCh
-		log.Info("shutting down gRPC server...")
-		s.GracefulStop()
+		log.Info("shutting down servers...")
+		
+		// 设置健康检查为不健康状态
+		grpcHealthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		
+		// 优雅关闭 gRPC 服务器
+		go func() {
+			s.GracefulStop()
+		}()
+		
+		// 优雅关闭健康检查 HTTP 服务器
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := healthServer.Shutdown(ctx); err != nil {
+			log.Error("failed to shutdown health server", logger.Error(err))
+		}
+		
+		log.Info("servers shutdown complete")
 	}()
 
 	log.Info("🚀 {{SERVICE_TITLE}} Service started", logger.Int("port", c.Server.GRPCPort))
@@ -66,20 +87,26 @@ func main() {
 	}
 }
 
-func startHealthServer(port int, log *logger.Logger) {
+func startHealthServer(port int, log *logger.Logger) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+	// Prometheus 指标端点
+	mux.Handle("/metrics", promhttp.Handler())
 	
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
-	log.Info("🏥 Health server started", logger.Int("port", port))
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Error("health server error", logger.Error(err))
-	}
+	go func() {
+		log.Info("🏥 Health server started", logger.Int("port", port))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("health server error", logger.Error(err))
+		}
+	}()
+	
+	return server
 }

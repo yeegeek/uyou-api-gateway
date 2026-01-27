@@ -1,0 +1,107 @@
+package repository
+
+import (
+	"context"
+	"testing"
+
+	"{{MODULE_PATH}}/internal/model"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+func TestRepository_Create{{SERVICE_TITLE}}(t *testing.T) {
+	repo, err := New(&conf.Config{}, logger.New("debug", "console"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	
+	item := &model.{{SERVICE_TITLE}}{
+		Name: "test-{{SERVICE_NAME}}",
+	}
+	
+	err = repo.Create{{SERVICE_TITLE}}(context.Background(), item)
+	if err != nil {
+		t.Errorf("Create{{SERVICE_TITLE}}() error = %v", err)
+	}
+	
+	if item.ID <= 0 {
+		t.Errorf("Create{{SERVICE_TITLE}}() item.ID = %v, want > 0", item.ID)
+	}
+}
+
+func TestRepository_Get{{SERVICE_TITLE}}ByID(t *testing.T) {
+	repo, err := New(&conf.Config{}, logger.New("debug", "console"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	
+	// 先创建一个测试数据
+	item := &model.{{SERVICE_TITLE}}{
+		Name: "test-{{SERVICE_NAME}}",
+	}
+	err = repo.Create{{SERVICE_TITLE}}(context.Background(), item)
+	if err != nil {
+		t.Fatalf("Create{{SERVICE_TITLE}}() error = %v", err)
+	}
+	
+	// 获取数据
+	got, err := repo.Get{{SERVICE_TITLE}}ByID(context.Background(), item.ID)
+	if err != nil {
+		t.Errorf("Get{{SERVICE_TITLE}}ByID() error = %v", err)
+	}
+	
+	if got == nil {
+		t.Errorf("Get{{SERVICE_TITLE}}ByID() got = nil, want not nil")
+	}
+	
+	if got.ID != item.ID {
+		t.Errorf("Get{{SERVICE_TITLE}}ByID() got.ID = %v, want %v", got.ID, item.ID)
+	}
+	
+	// 测试不存在的 ID
+	got, err = repo.Get{{SERVICE_TITLE}}ByID(context.Background(), 99999)
+	if err != nil {
+		t.Errorf("Get{{SERVICE_TITLE}}ByID() error = %v", err)
+	}
+	if got != nil {
+		t.Errorf("Get{{SERVICE_TITLE}}ByID() got = %v, want nil", got)
+	}
+}
+
+func TestRepository_List{{SERVICE_TITLE}}s(t *testing.T) {
+	repo, err := New(&conf.Config{}, logger.New("debug", "console"))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	
+	// 创建一些测试数据
+	for i := 0; i < 5; i++ {
+		item := &model.{{SERVICE_TITLE}}{
+			Name: "test-item",
+		}
+		_ = repo.Create{{SERVICE_TITLE}}(context.Background(), item)
+	}
+	
+	items, total, err := repo.List{{SERVICE_TITLE}}s(context.Background(), 1, 10)
+	if err != nil {
+		t.Errorf("List{{SERVICE_TITLE}}s() error = %v", err)
+	}
+	
+	if total < 5 {
+		t.Errorf("List{{SERVICE_TITLE}}s() total = %v, want >= 5", total)
+	}
+	
+	if len(items) == 0 {
+		t.Errorf("List{{SERVICE_TITLE}}s() items = empty, want not empty")
+	}
+	
+	// 测试分页
+	items, total, err = repo.List{{SERVICE_TITLE}}s(context.Background(), 1, 2)
+	if err != nil {
+		t.Errorf("List{{SERVICE_TITLE}}s() error = %v", err)
+	}
+	
+	if len(items) > 2 {
+		t.Errorf("List{{SERVICE_TITLE}}s() items length = %v, want <= 2", len(items))
+	}
+}

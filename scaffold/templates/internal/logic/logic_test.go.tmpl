@@ -1,0 +1,124 @@
+package logic
+
+import (
+	"context"
+	"testing"
+
+	"{{MODULE_PATH}}/internal/repository"
+	"{{MODULE_PATH}}/pkg/conf"
+	"{{MODULE_PATH}}/pkg/logger"
+)
+
+func TestLogic_Create{{SERVICE_TITLE}}(t *testing.T) {
+	log := logger.New("debug", "console")
+	repo, err := repository.New(&conf.Config{}, log)
+	if err != nil {
+		t.Fatalf("repository.New() error = %v", err)
+	}
+	lgc := New(&conf.Config{}, log, repo)
+	
+	tests := []struct {
+		name    string
+		arg     string
+		wantErr bool
+	}{
+		{
+			name:    "正常创建",
+			arg:     "test-{{SERVICE_NAME}}",
+			wantErr: false,
+		},
+		{
+			name:    "空名称",
+			arg:     "",
+			wantErr: true,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, err := lgc.Create{{SERVICE_TITLE}}(context.Background(), tt.arg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Create{{SERVICE_TITLE}}() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && id <= 0 {
+				t.Errorf("Create{{SERVICE_TITLE}}() id = %v, want > 0", id)
+			}
+		})
+	}
+}
+
+func TestLogic_Get{{SERVICE_TITLE}}(t *testing.T) {
+	log := logger.New("debug", "console")
+	repo, err := repository.New(&conf.Config{}, log)
+	if err != nil {
+		t.Fatalf("repository.New() error = %v", err)
+	}
+	lgc := New(&conf.Config{}, log, repo)
+	
+	// 先创建一个测试数据
+	id, err := lgc.Create{{SERVICE_TITLE}}(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Create{{SERVICE_TITLE}}() error = %v", err)
+	}
+	
+	tests := []struct {
+		name    string
+		id      int64
+		wantErr bool
+	}{
+		{
+			name:    "正常获取",
+			id:      id,
+			wantErr: false,
+		},
+		{
+			name:    "不存在的 ID",
+			id:      99999,
+			wantErr: true,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item, err := lgc.Get{{SERVICE_TITLE}}(context.Background(), tt.id)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Get{{SERVICE_TITLE}}() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && item == nil {
+				t.Errorf("Get{{SERVICE_TITLE}}() item = nil, want not nil")
+			}
+			if !tt.wantErr && item.ID != tt.id {
+				t.Errorf("Get{{SERVICE_TITLE}}() item.ID = %v, want %v", item.ID, tt.id)
+			}
+		})
+	}
+}
+
+func TestLogic_List{{SERVICE_TITLE}}s(t *testing.T) {
+	log := logger.New("debug", "console")
+	repo, err := repository.New(&conf.Config{}, log)
+	if err != nil {
+		t.Fatalf("repository.New() error = %v", err)
+	}
+	lgc := New(&conf.Config{}, log, repo)
+	
+	// 创建一些测试数据
+	for i := 0; i < 5; i++ {
+		_, _ = lgc.Create{{SERVICE_TITLE}}(context.Background(), "test-item")
+	}
+	
+	items, total, err := lgc.List{{SERVICE_TITLE}}s(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("List{{SERVICE_TITLE}}s() error = %v", err)
+	}
+	
+	if total < 5 {
+		t.Errorf("List{{SERVICE_TITLE}}s() total = %v, want >= 5", total)
+	}
+	
+	if len(items) == 0 {
+		t.Errorf("List{{SERVICE_TITLE}}s() items = empty, want not empty")
+	}
+}

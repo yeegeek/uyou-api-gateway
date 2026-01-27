@@ -1,5 +1,5 @@
 # 自动生成的 APISIX 配置文件
-# generated_at: Tue Jan 27 13:29:44 CST 2026
+# generated_at: Tue Jan 27 15:36:00 CST 2026
 
 routes:
   - id: user_create
@@ -8,6 +8,7 @@ routes:
     methods:
       - POST
     plugins:
+      jwt-auth: {}
       limit-req:
         rate: 5
         burst: 10
