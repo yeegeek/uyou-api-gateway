@@ -1,5 +1,5 @@
 # 自动生成的 APISIX 配置文件
-# generated_at: Tue Jan 27 19:16:23 CST 2026
+# generated_at: Wed Jan 28 09:53:59 CST 2026
 
 routes:
   - id: user_create

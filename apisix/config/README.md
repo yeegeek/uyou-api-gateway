@@ -21,13 +21,25 @@ apisix/config/
 
 ### 首次使用
 
-1. **设置环境变量**（在 `.env` 文件中）：
+1. **自动生成密钥**（推荐）：
    ```bash
-   APISIX_ADMIN_KEY=your_secret_key_here
-   JWT_SECRET=your_jwt_secret_here
+   # 脚本会自动检查 .env 文件，如果 APISIX_ADMIN_KEY 或 JWT_SECRET 为空
+   # 会使用 openssl 自动生成并保存到 .env 文件
+   bash scripts/apisix-start.sh
    ```
 
-2. **生成配置文件**：
+2. **手动设置密钥**（可选）：
+   如果需要在 `.env` 文件中手动设置：
+   ```bash
+   # 生成 APISIX Admin Key (32 字符 hex)
+   openssl rand -hex 16
+   
+   # 生成 JWT Secret (base64)
+   openssl rand -base64 32
+   ```
+   然后将生成的密钥添加到 `.env` 文件中。
+
+3. **生成配置文件**：
    ```bash
    # 方式 1: 手动生成
    bash scripts/apisix-start.sh
@@ -75,6 +87,8 @@ vim .env
 # 重新生成配置文件
 bash scripts/apisix-start.sh
 ```
+
+**注意**：如果 `.env` 文件中的 `APISIX_ADMIN_KEY` 或 `JWT_SECRET` 为空，脚本会自动生成新密钥。
 
 ## ⚠️ 注意事项
 

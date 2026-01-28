@@ -22,17 +22,78 @@ NC='\033[0m'
 # 获取项目根目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+# 生成随机密钥的函数
+generate_secret() {
+    local length=$1
+    local method=$2  # hex 或 base64
+    
+    if [ "$method" = "hex" ]; then
+        openssl rand -hex "$length"
+    else
+        openssl rand -base64 "$length"
+    fi
+}
+
+# 检查并生成密钥（如果缺失）
+ensure_secret() {
+    local key_name=$1
+    local key_length=$2
+    local key_method=$3  # hex 或 base64
+    
+    # 如果 .env 文件不存在，从 .env.example 创建
+    if [ ! -f "$ENV_FILE" ]; then
+        if [ -f "${PROJECT_ROOT}/.env.example" ]; then
+            cp "${PROJECT_ROOT}/.env.example" "$ENV_FILE"
+        fi
+    fi
+    
+    # 读取当前值
+    local current_value=""
+    if [ -f "$ENV_FILE" ] && grep -q "^${key_name}=" "$ENV_FILE"; then
+        current_value=$(grep "^${key_name}=" "$ENV_FILE" | cut -d'=' -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    fi
+    
+    # 如果值为空，生成新密钥
+    if [ -z "$current_value" ]; then
+        local new_secret=$(generate_secret "$key_length" "$key_method")
+        
+        # 更新 .env 文件
+        if [ -f "$ENV_FILE" ] && grep -q "^${key_name}=" "$ENV_FILE"; then
+            # 如果键已存在，替换值
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s|^${key_name}=.*|${key_name}=${new_secret}|" "$ENV_FILE"
+            else
+                sed -i "s|^${key_name}=.*|${key_name}=${new_secret}|" "$ENV_FILE"
+            fi
+        else
+            # 如果键不存在，追加到文件末尾
+            echo "${key_name}=${new_secret}" >> "$ENV_FILE"
+        fi
+    fi
+}
+
+# 确保必要的密钥存在（静默模式，不输出）
+ensure_secret "APISIX_ADMIN_KEY" 16 "hex" > /dev/null 2>&1
+ensure_secret "JWT_SECRET" 32 "base64" > /dev/null 2>&1
 
 # 加载 .env 文件 (如果存在且环境变量未设置)
-if [[ -f "${PROJECT_ROOT}/.env" ]]; then
+if [[ -f "$ENV_FILE" ]]; then
     set -a  # 自动 export 所有变量
-    source "${PROJECT_ROOT}/.env"
+    source "$ENV_FILE"
     set +a
 fi
 
-# 配置变量 (优先使用环境变量，其次使用 .env，最后使用默认值)
+# 配置变量 (优先使用环境变量，其次使用 .env)
 GATEWAY_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+ADMIN_KEY="${APISIX_ADMIN_KEY}"
+
+# 验证必要的配置
+if [ -z "$ADMIN_KEY" ]; then
+    echo -e "${RED}错误: APISIX_ADMIN_KEY 未设置，请检查 .env 文件${NC}"
+    exit 1
+fi
 CONFIG_DIR="${APISIX_CONFIG_DIR:-${PROJECT_ROOT}/apisix/config}"
 ROUTES_DIR="${APISIX_ROUTES_DIR:-${CONFIG_DIR}/routes}"
 PROTOS_ARCHIVE_DIR="${APISIX_PROTOS_DIR:-${CONFIG_DIR}/protos}"
@@ -134,10 +195,11 @@ sync_global_config() {
     # 同步 Consumers（以 Consumer.plugins.jwt-auth 的方式配置，适配 APISIX 3.8）
     local consumer_names=$(yq eval '.consumers[].username' "$global_yaml" 2>/dev/null)
     if [ -n "$consumer_names" ] && [ "$consumer_names" != "null" ]; then
-        # 从环境变量读取 JWT_SECRET，如果不存在则使用配置文件中的值
-        local jwt_secret="${JWT_SECRET:-$(yq eval '.consumers[0].plugins."jwt-auth".secret' "$global_yaml" 2>/dev/null)}"
-        if [ -z "$jwt_secret" ] || [ "$jwt_secret" = "null" ]; then
-            jwt_secret="uyou_secret_key_2026"  # 默认值
+        # 从环境变量读取 JWT_SECRET
+        local jwt_secret="${JWT_SECRET}"
+        if [ -z "$jwt_secret" ]; then
+            echo -e "  ${RED}✗ 错误: JWT_SECRET 未设置，请检查 .env 文件${NC}"
+            return 1
         fi
 
         for cname in $consumer_names; do
