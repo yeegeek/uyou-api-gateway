@@ -1,0 +1,53 @@
+// {{SERVICE_TITLE}} Service - MongoDB 初始化索引
+// 迁移版本: 000001
+// 使用方法: mongosh {{DB_NAME}} < 000001_init_indexes.js
+
+// 选择数据库
+db = db.getSiblingDB('{{DB_NAME}}');
+
+print('🔧 开始创建索引...');
+
+// ============================================
+// 创建集合（如果不存在）
+// ============================================
+if (!db.getCollectionNames().includes('{{TABLE_NAME}}')) {
+    db.createCollection('{{TABLE_NAME}}');
+    print('✅ 已创建集合: {{TABLE_NAME}}');
+}
+
+// ============================================
+// 创建索引
+// ============================================
+
+// 名称索引
+db.{{TABLE_NAME}}.createIndex(
+    { name: 1 },
+    { name: 'idx_{{TABLE_NAME}}_name', background: true }
+);
+print('✅ 已创建索引: idx_{{TABLE_NAME}}_name');
+
+// 创建时间索引（降序，用于排序）
+db.{{TABLE_NAME}}.createIndex(
+    { created_at: -1 },
+    { name: 'idx_{{TABLE_NAME}}_created_at', background: true }
+);
+print('✅ 已创建索引: idx_{{TABLE_NAME}}_created_at');
+
+// 更新时间索引
+db.{{TABLE_NAME}}.createIndex(
+    { updated_at: -1 },
+    { name: 'idx_{{TABLE_NAME}}_updated_at', background: true }
+);
+print('✅ 已创建索引: idx_{{TABLE_NAME}}_updated_at');
+
+// ============================================
+// 验证索引
+// ============================================
+print('');
+print('📋 当前索引列表:');
+db.{{TABLE_NAME}}.getIndexes().forEach(function(index) {
+    print('   - ' + index.name);
+});
+
+print('');
+print('✅ 迁移完成！');

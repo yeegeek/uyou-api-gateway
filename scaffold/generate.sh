@@ -214,16 +214,31 @@ generate_service() {
     
     # 复制通用模板
     copy_template "$TEMPLATES_DIR/go.mod.tmpl" "$SERVICE_DIR/go.mod"
-    copy_template "$TEMPLATES_DIR/Makefile.tmpl" "$SERVICE_DIR/Makefile"
     copy_template "$TEMPLATES_DIR/Dockerfile.tmpl" "$SERVICE_DIR/Dockerfile"
     copy_template "$TEMPLATES_DIR/.gitignore.tmpl" "$SERVICE_DIR/.gitignore"
     copy_template "$TEMPLATES_DIR/README.md.tmpl" "$SERVICE_DIR/README.md"
+    copy_template "$TEMPLATES_DIR/.air.toml.tmpl" "$SERVICE_DIR/.air.toml"
+    
+    # 根据数据库类型选择 Makefile
+    case "$DB_TYPE" in
+        postgres)
+            copy_template "$TEMPLATES_DIR/Makefile.tmpl" "$SERVICE_DIR/Makefile"
+            ;;
+        mongodb)
+            copy_template "$TEMPLATES_DIR/Makefile.mongodb.tmpl" "$SERVICE_DIR/Makefile"
+            ;;
+        none)
+            copy_template "$TEMPLATES_DIR/Makefile.none.tmpl" "$SERVICE_DIR/Makefile"
+            ;;
+    esac
     
     # 复制数据库类型特定的 .env 模板
     copy_template "$TEMPLATES_DIR/.env.${DB_TYPE}.tmpl" "$SERVICE_DIR/.env.example"
     
     # 复制根据数据库类型选择的模板
     copy_template "$TEMPLATES_DIR/docker-compose.${DB_TYPE}.yml.tmpl" "$SERVICE_DIR/docker-compose.yml"
+    copy_template "$TEMPLATES_DIR/docker-compose.dev.${DB_TYPE}.yml.tmpl" "$SERVICE_DIR/docker-compose.dev.yml"
+    copy_template "$TEMPLATES_DIR/Dockerfile.dev.tmpl" "$SERVICE_DIR/Dockerfile.dev"
     copy_template "$TEMPLATES_DIR/config/config.${DB_TYPE}.yaml.tmpl" "$SERVICE_DIR/config/config.yaml"
     copy_template "$TEMPLATES_DIR/internal/model/model.${DB_TYPE}.go.tmpl" "$SERVICE_DIR/internal/model/${SERVICE_NAME}.go"
     
@@ -266,8 +281,25 @@ generate_service() {
         copy_template "$TEMPLATES_DIR/internal/repository/postgres.go.tmpl" "$SERVICE_DIR/internal/repository/postgres.go"
         mkdir -p "$SERVICE_DIR/scripts"
         copy_template "$TEMPLATES_DIR/scripts/init-db.postgres.sql.tmpl" "$SERVICE_DIR/scripts/init-db.sql"
+        
+        # 复制数据库迁移文件
+        print_info "📦 生成数据库迁移文件..."
+        mkdir -p "$SERVICE_DIR/migrations"
+        copy_template "$TEMPLATES_DIR/migrations/postgres/000001_init_schema.up.sql.tmpl" "$SERVICE_DIR/migrations/000001_init_schema.up.sql"
+        copy_template "$TEMPLATES_DIR/migrations/postgres/000001_init_schema.down.sql.tmpl" "$SERVICE_DIR/migrations/000001_init_schema.down.sql"
     elif [ "$DB_TYPE" = "mongodb" ]; then
         copy_template "$TEMPLATES_DIR/internal/repository/mongodb.go.tmpl" "$SERVICE_DIR/internal/repository/mongodb.go"
+        
+        # 复制 MongoDB 迁移文件
+        print_info "📦 生成 MongoDB 迁移文件..."
+        mkdir -p "$SERVICE_DIR/migrations"
+        copy_template "$TEMPLATES_DIR/migrations/mongodb/000001_init_indexes.js.tmpl" "$SERVICE_DIR/migrations/000001_init_indexes.js"
+        copy_template "$TEMPLATES_DIR/migrations/mongodb/000001_init_indexes.down.js.tmpl" "$SERVICE_DIR/migrations/000001_init_indexes.down.js"
+    fi
+    
+    # 复制迁移 README
+    if [ "$DB_TYPE" != "none" ]; then
+        copy_template "$TEMPLATES_DIR/migrations/README.md.tmpl" "$SERVICE_DIR/migrations/README.md"
     fi
     
     # 生成 Proto 代码

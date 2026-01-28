@@ -110,9 +110,19 @@ apisix-clear:
 	@echo "⚠️  正在清空 APISIX 所有配置..."
 	@for resource in routes consumers global_rules protos; do \
 		echo "清理 $$resource ..."; \
-		items=$$(curl -s $(APISIX_ADMIN_URL)/apisix/admin/$$resource -H "X-API-KEY: $(APISIX_ADMIN_KEY)" | python3 -c "import sys, json; data=json.load(sys.stdin); print(' '.join([str(i.get('value', {}).get('id') or i.get('value', {}).get('username')) for i in data.get('list', []) if i.get('value')]))" 2>/dev/null); \
+		response=$$(curl -sf $(APISIX_ADMIN_URL)/apisix/admin/$$resource -H "X-API-KEY: $(APISIX_ADMIN_KEY)" 2>/dev/null) || { echo "   ⚠️  无法获取 $$resource 列表"; continue; }; \
+		items=$$(echo "$$response" | python3 -c "import sys, json; \
+try: \
+    data=json.load(sys.stdin); \
+    print(' '.join([str(i.get('value', {}).get('id') or i.get('value', {}).get('username')) for i in data.get('list', []) if i.get('value')])) \
+except: \
+    pass" 2>/dev/null); \
 		for id in $$items; do \
-			curl -s -X DELETE $(APISIX_ADMIN_URL)/apisix/admin/$$resource/$$id -H "X-API-KEY: $(APISIX_ADMIN_KEY)" > /dev/null; \
+			if curl -sf -X DELETE $(APISIX_ADMIN_URL)/apisix/admin/$$resource/$$id -H "X-API-KEY: $(APISIX_ADMIN_KEY)" > /dev/null 2>&1; then \
+				echo "   ✓ 已删除 $$resource/$$id"; \
+			else \
+				echo "   ✗ 删除失败 $$resource/$$id"; \
+			fi; \
 		done; \
 	done
 	@echo "✅ APISIX 已重置为初始状态！"

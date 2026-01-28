@@ -1,0 +1,79 @@
+# 开发环境配置 (支持热重载)
+# 使用方法: docker compose -f docker-compose.dev.yml up
+version: '3.8'
+
+services:
+  # {{SERVICE_TITLE}} 服务 (开发模式 - 热重载)
+  {{SERVICE_NAME}}:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: uyou-{{SERVICE_NAME}}-dev
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: {{DB_NAME}}
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: {{REDIS_DB}}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_key}
+    volumes:
+      # 挂载源代码目录 (热重载核心)
+      - .:/app
+      # 保留 go mod 缓存
+      - go-mod-cache:/go/pkg/mod
+    ports:
+      - "{{GRPC_PORT}}:{{GRPC_PORT}}"
+      - "{{HTTP_PORT}}:{{HTTP_PORT}}"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - {{SERVICE_NAME}}-network
+    restart: unless-stopped
+
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: uyou-{{SERVICE_NAME}}-postgres
+    environment:
+      POSTGRES_DB: {{DB_NAME}}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - {{SERVICE_NAME}}-network
+    restart: unless-stopped
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: uyou-{{SERVICE_NAME}}-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - {{SERVICE_NAME}}-network
+    restart: unless-stopped
+
+networks:
+  {{SERVICE_NAME}}-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  go-mod-cache:

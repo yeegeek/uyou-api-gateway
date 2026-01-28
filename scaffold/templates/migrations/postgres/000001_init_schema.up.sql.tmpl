@@ -1,0 +1,47 @@
+-- {{SERVICE_TITLE}} Service - 初始化表结构
+-- 迁移版本: 000001
+-- 创建时间: 自动生成
+
+-- ============================================
+-- 创建主表
+-- ============================================
+CREATE TABLE IF NOT EXISTS {{TABLE_NAME}} (
+    id          BIGSERIAL PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 添加表注释
+COMMENT ON TABLE {{TABLE_NAME}} IS '{{SERVICE_TITLE}} 主表';
+COMMENT ON COLUMN {{TABLE_NAME}}.id IS '主键ID';
+COMMENT ON COLUMN {{TABLE_NAME}}.name IS '名称';
+COMMENT ON COLUMN {{TABLE_NAME}}.created_at IS '创建时间';
+COMMENT ON COLUMN {{TABLE_NAME}}.updated_at IS '更新时间';
+
+-- ============================================
+-- 创建索引
+-- ============================================
+CREATE INDEX IF NOT EXISTS idx_{{TABLE_NAME}}_name 
+    ON {{TABLE_NAME}}(name);
+
+CREATE INDEX IF NOT EXISTS idx_{{TABLE_NAME}}_created_at 
+    ON {{TABLE_NAME}}(created_at DESC);
+
+-- ============================================
+-- 创建更新时间触发器
+-- ============================================
+CREATE OR REPLACE FUNCTION update_{{TABLE_NAME}}_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_{{TABLE_NAME}}_updated_at ON {{TABLE_NAME}};
+
+CREATE TRIGGER trigger_{{TABLE_NAME}}_updated_at
+    BEFORE UPDATE ON {{TABLE_NAME}}
+    FOR EACH ROW
+    EXECUTE FUNCTION update_{{TABLE_NAME}}_updated_at();

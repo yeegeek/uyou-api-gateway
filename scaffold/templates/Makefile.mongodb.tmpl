@@ -1,17 +1,16 @@
 .PHONY: proto build test clean docker-build run doc
-.PHONY: migrate-up migrate-down migrate-create migrate-status migrate-version migrate-force migrate-drop
+.PHONY: migrate-up migrate-down migrate-status
 
 # ==================== 默认配置 ====================
-# 数据库配置 (可通过环境变量覆盖)
-DB_HOST     ?= localhost
-DB_PORT     ?= 5432
-DB_USER     ?= postgres
-DB_PASSWORD ?= postgres
-DB_NAME     ?= {{DB_NAME}}
-DB_SSLMODE  ?= disable
+# MongoDB 配置 (可通过环境变量覆盖)
+MONGO_HOST     ?= localhost
+MONGO_PORT     ?= 27017
+MONGO_USER     ?= root
+MONGO_PASSWORD ?= example
+MONGO_DATABASE ?= {{DB_NAME}}
 
-# 数据库连接字符串
-DB_URL = postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
+# MongoDB 连接字符串
+MONGO_URL = mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@$(MONGO_HOST):$(MONGO_PORT)/$(MONGO_DATABASE)?authSource=admin
 
 # ==================== 构建相关 ====================
 
@@ -80,108 +79,89 @@ docker-dev-down:
 docker-dev-logs:
 	docker compose -f docker-compose.dev.yml logs -f {{SERVICE_NAME}}
 
-# ==================== 数据库迁移 ====================
+# ==================== 数据库迁移 (MongoDB) ====================
 
-# 检查 migrate 工具是否安装
-check-migrate:
-	@command -v migrate > /dev/null || { \
+# 检查 mongosh 是否安装
+check-mongosh:
+	@command -v mongosh > /dev/null || { \
 		echo ""; \
-		echo "❌ migrate 工具未安装"; \
+		echo "❌ mongosh 工具未安装"; \
 		echo ""; \
-		echo "请安装 migrate:"; \
-		echo "  go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest"; \
-		echo ""; \
-		echo "或使用 brew (macOS):"; \
-		echo "  brew install golang-migrate"; \
+		echo "请安装 mongosh:"; \
+		echo "  brew install mongosh  (macOS)"; \
+		echo "  或从 https://www.mongodb.com/try/download/shell 下载"; \
 		echo ""; \
 		exit 1; \
 	}
 
-# 升级到最新版本
-migrate-up: check-migrate
-	@echo "🔼 执行数据库迁移 (升级)..."
-	@migrate -path migrations -database "$(DB_URL)" up
+# 执行所有迁移
+migrate-up: check-mongosh
+	@echo "🔼 执行 MongoDB 迁移..."
+	@for file in migrations/*.js; do \
+		if [[ ! "$$file" == *".down.js" ]]; then \
+			echo "执行: $$file"; \
+			mongosh "$(MONGO_URL)" < "$$file"; \
+		fi; \
+	done
 	@echo "✅ 迁移完成"
 
-# 回滚一个版本
-migrate-down: check-migrate
-	@echo "🔽 执行数据库迁移 (回滚 1 个版本)..."
-	@migrate -path migrations -database "$(DB_URL)" down 1
-	@echo "✅ 回滚完成"
-
-# 回滚所有版本
-migrate-down-all: check-migrate
-	@echo "⚠️  即将回滚所有迁移，这将删除所有数据！"
-	@read -p "确认回滚? [y/N]: " confirm; \
-	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
-		migrate -path migrations -database "$(DB_URL)" down -all; \
-		echo "✅ 全部回滚完成"; \
+# 回滚迁移
+migrate-down: check-mongosh
+	@echo "🔽 执行 MongoDB 回滚..."
+	@echo ""
+	@echo "可用的回滚脚本:"
+	@ls -la migrations/*.down.js 2>/dev/null | awk '{print "   " NR ". " $$NF}' || echo "   (无回滚脚本)"
+	@echo ""
+	@read -p "输入要执行的回滚脚本文件名: " file; \
+	if [ -f "$$file" ]; then \
+		mongosh "$(MONGO_URL)" < "$$file"; \
+		echo "✅ 回滚完成"; \
 	else \
-		echo "❌ 已取消"; \
+		echo "❌ 文件不存在: $$file"; \
 	fi
-
-# 升级/回滚到指定版本
-migrate-goto: check-migrate
-	@read -p "目标版本号: " version; \
-	migrate -path migrations -database "$(DB_URL)" goto $$version
-	@echo "✅ 迁移到版本 $$version 完成"
-
-# 查看当前版本
-migrate-version: check-migrate
-	@echo "📌 当前数据库版本:"
-	@migrate -path migrations -database "$(DB_URL)" version
 
 # 查看迁移状态
 migrate-status:
 	@echo ""
 	@echo "╔════════════════════════════════════════╗"
-	@echo "║        数据库迁移状态                  ║"
+	@echo "║     MongoDB 迁移状态                   ║"
 	@echo "╚════════════════════════════════════════╝"
 	@echo ""
-	@echo "📁 迁移文件:"
-	@ls -la migrations/*.sql 2>/dev/null | awk '{print "   " $$NF}' || echo "   (无迁移文件)"
+	@echo "📁 迁移脚本:"
+	@ls -la migrations/*.js 2>/dev/null | awk '{print "   " $$NF}' || echo "   (无迁移文件)"
 	@echo ""
-	@echo "📌 当前版本:"
-	@migrate -path migrations -database "$(DB_URL)" version 2>/dev/null || echo "   (无法连接数据库或未初始化)"
+	@echo "📊 当前索引:"
+	@mongosh "$(MONGO_URL)" --quiet --eval "db.{{TABLE_NAME}}.getIndexes().forEach(function(i){print('   - ' + i.name)})" 2>/dev/null || echo "   (无法连接数据库)"
 	@echo ""
 
-# 创建新的迁移文件
-migrate-create: check-migrate
+# 创建新的迁移脚本
+migrate-create:
 	@echo ""
-	@echo "📝 创建新的迁移文件"
+	@echo "📝 创建新的迁移脚本"
 	@echo ""
-	@read -p "迁移名称 (例如: add_user_email): " name; \
+	@read -p "迁移名称 (例如: add_email_index): " name; \
 	if [ -z "$$name" ]; then \
 		echo "❌ 迁移名称不能为空"; \
 		exit 1; \
 	fi; \
-	migrate create -ext sql -dir migrations -seq $$name; \
+	seq=$$(ls -1 migrations/*.js 2>/dev/null | wc -l | tr -d ' '); \
+	seq=$$((seq / 2 + 1)); \
+	seq=$$(printf "%06d" $$seq); \
+	echo "// Migration: $$name" > "migrations/$${seq}_$${name}.js"; \
+	echo "// Created: $$(date)" >> "migrations/$${seq}_$${name}.js"; \
+	echo "" >> "migrations/$${seq}_$${name}.js"; \
+	echo "db = db.getSiblingDB('{{DB_NAME}}');" >> "migrations/$${seq}_$${name}.js"; \
+	echo "" >> "migrations/$${seq}_$${name}.js"; \
+	echo "// TODO: Add migration logic here" >> "migrations/$${seq}_$${name}.js"; \
+	echo "" >> "migrations/$${seq}_$${name}.js"; \
+	echo "// Rollback script" > "migrations/$${seq}_$${name}.down.js"; \
+	echo "db = db.getSiblingDB('{{DB_NAME}}');" >> "migrations/$${seq}_$${name}.down.js"; \
+	echo "" >> "migrations/$${seq}_$${name}.down.js"; \
+	echo "// TODO: Add rollback logic here" >> "migrations/$${seq}_$${name}.down.js"; \
 	echo ""; \
 	echo "✅ 已创建迁移文件:"; \
-	ls -la migrations/*$$name*.sql 2>/dev/null | awk '{print "   " $$NF}'
-
-# 强制设置版本 (修复脏状态)
-migrate-force: check-migrate
-	@echo ""
-	@echo "⚠️  强制设置版本号 (用于修复脏状态)"
-	@echo "   当前状态: $$(migrate -path migrations -database "$(DB_URL)" version 2>&1)"
-	@echo ""
-	@read -p "强制设置版本号: " version; \
-	migrate -path migrations -database "$(DB_URL)" force $$version; \
-	echo "✅ 已强制设置版本为 $$version"
-
-# 删除所有表 (危险操作)
-migrate-drop: check-migrate
-	@echo ""
-	@echo "🚨 警告: 此操作将删除数据库中的所有表！"
-	@echo ""
-	@read -p "输入数据库名称确认删除 [{{DB_NAME}}]: " dbname; \
-	if [ "$$dbname" = "{{DB_NAME}}" ]; then \
-		migrate -path migrations -database "$(DB_URL)" drop -f; \
-		echo "✅ 已删除所有表"; \
-	else \
-		echo "❌ 数据库名称不匹配，已取消"; \
-	fi
+	echo "   migrations/$${seq}_$${name}.js"; \
+	echo "   migrations/$${seq}_$${name}.down.js"
 
 # ==================== 文档生成 ====================
 
@@ -219,16 +199,11 @@ help:
 	@echo "  make docker-dev-down  停止 Docker 开发环境"
 	@echo "  make docker-dev-logs  查看开发环境日志"
 	@echo ""
-	@echo "数据库迁移:"
-	@echo "  make migrate-up        升级到最新版本"
-	@echo "  make migrate-down      回滚一个版本"
-	@echo "  make migrate-down-all  回滚所有版本 (危险)"
-	@echo "  make migrate-goto      升级/回滚到指定版本"
-	@echo "  make migrate-version   查看当前版本"
+	@echo "数据库迁移 (MongoDB):"
+	@echo "  make migrate-up        执行所有迁移"
+	@echo "  make migrate-down      回滚迁移"
 	@echo "  make migrate-status    查看迁移状态"
-	@echo "  make migrate-create    创建新的迁移文件"
-	@echo "  make migrate-force     强制设置版本 (修复脏状态)"
-	@echo "  make migrate-drop      删除所有表 (危险)"
+	@echo "  make migrate-create    创建新的迁移脚本"
 	@echo ""
 	@echo "其他:"
 	@echo "  make doc            生成 API 文档"

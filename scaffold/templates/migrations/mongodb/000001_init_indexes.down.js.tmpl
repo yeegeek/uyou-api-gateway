@@ -1,0 +1,46 @@
+// {{SERVICE_TITLE}} Service - MongoDB 回滚索引
+// 迁移版本: 000001 (回滚)
+// 使用方法: mongosh {{DB_NAME}} < 000001_init_indexes.down.js
+// 警告: 此操作将删除索引！
+
+// 选择数据库
+db = db.getSiblingDB('{{DB_NAME}}');
+
+print('⚠️  开始回滚索引...');
+
+// ============================================
+// 删除索引
+// ============================================
+
+try {
+    db.{{TABLE_NAME}}.dropIndex('idx_{{TABLE_NAME}}_name');
+    print('✅ 已删除索引: idx_{{TABLE_NAME}}_name');
+} catch (e) {
+    print('⚠️  索引不存在: idx_{{TABLE_NAME}}_name');
+}
+
+try {
+    db.{{TABLE_NAME}}.dropIndex('idx_{{TABLE_NAME}}_created_at');
+    print('✅ 已删除索引: idx_{{TABLE_NAME}}_created_at');
+} catch (e) {
+    print('⚠️  索引不存在: idx_{{TABLE_NAME}}_created_at');
+}
+
+try {
+    db.{{TABLE_NAME}}.dropIndex('idx_{{TABLE_NAME}}_updated_at');
+    print('✅ 已删除索引: idx_{{TABLE_NAME}}_updated_at');
+} catch (e) {
+    print('⚠️  索引不存在: idx_{{TABLE_NAME}}_updated_at');
+}
+
+// ============================================
+// 验证索引
+// ============================================
+print('');
+print('📋 剩余索引列表:');
+db.{{TABLE_NAME}}.getIndexes().forEach(function(index) {
+    print('   - ' + index.name);
+});
+
+print('');
+print('✅ 回滚完成！');

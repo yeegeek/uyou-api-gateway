@@ -1,0 +1,110 @@
+.PHONY: proto build test clean docker-build run doc
+
+# ==================== 构建相关 ====================
+
+# 生成 Proto 代码
+proto:
+	protoc --go_out=. --go_opt=paths=source_relative \
+	       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+	       api/proto/*.proto
+
+# 构建服务
+build:
+	go build -o bin/{{SERVICE_NAME}} cmd/server/main.go
+
+# 运行服务
+run:
+	go run cmd/server/main.go
+
+# 热重载运行 (开发模式)
+dev: check-air
+	air
+
+# 检查 air 是否安装
+check-air:
+	@command -v air > /dev/null || { \
+		echo ""; \
+		echo "❌ air 工具未安装"; \
+		echo ""; \
+		echo "请安装 air (热重载工具):"; \
+		echo "  go install github.com/cosmtrek/air@latest"; \
+		echo ""; \
+		echo "或使用 brew (macOS):"; \
+		echo "  brew install air"; \
+		echo ""; \
+		exit 1; \
+	}
+
+# 测试
+test:
+	go test -v ./...
+
+# 集成测试
+test-integration:
+	go test -v -tags=integration ./...
+
+# 清理
+clean:
+	rm -rf bin/
+
+# Docker 构建 (生产镜像)
+docker-build:
+	docker build -t {{SERVICE_NAME}}:latest .
+
+# Docker 开发模式 (热重载)
+docker-dev:
+	docker compose -f docker-compose.dev.yml up --build
+
+# Docker 开发模式 (后台运行)
+docker-dev-d:
+	docker compose -f docker-compose.dev.yml up --build -d
+
+# 停止 Docker 开发环境
+docker-dev-down:
+	docker compose -f docker-compose.dev.yml down
+
+# 查看 Docker 开发环境日志
+docker-dev-logs:
+	docker compose -f docker-compose.dev.yml logs -f {{SERVICE_NAME}}
+
+# ==================== 文档生成 ====================
+
+# 生成 API 文档
+doc:
+	@if command -v protoc-gen-doc > /dev/null; then \
+		protoc --doc_out=./docs --doc_opt=markdown,api.md api/proto/*.proto; \
+		echo "✅ API 文档已生成: docs/api.md"; \
+	elif command -v buf > /dev/null; then \
+		buf generate --template buf.gen.doc.yaml; \
+		echo "✅ API 文档已生成"; \
+	else \
+		echo "⚠️  未找到文档生成工具"; \
+		echo "   安装 protoc-gen-doc: go install github.com/pseudomuto/protoc-gen-doc/cmd/protoc-gen-doc@latest"; \
+		echo "   或安装 buf: https://buf.build/docs/installation"; \
+	fi
+
+# ==================== 帮助 ====================
+
+help:
+	@echo ""
+	@echo "╔════════════════════════════════════════╗"
+	@echo "║   {{SERVICE_TITLE}} Service - 可用命令           ║"
+	@echo "╚════════════════════════════════════════╝"
+	@echo ""
+	@echo "构建相关:"
+	@echo "  make proto          生成 Proto 代码"
+	@echo "  make build          构建服务"
+	@echo "  make run            运行服务"
+	@echo "  make dev            本机热重载运行"
+	@echo "  make test           运行测试"
+	@echo "  make docker-build   构建生产镜像"
+	@echo "  make docker-dev     Docker 热重载运行"
+	@echo "  make docker-dev-d   Docker 热重载运行 (后台)"
+	@echo "  make docker-dev-down  停止 Docker 开发环境"
+	@echo "  make docker-dev-logs  查看开发环境日志"
+	@echo ""
+	@echo "其他:"
+	@echo "  make doc            生成 API 文档"
+	@echo "  make clean          清理构建文件"
+	@echo "  make help           显示此帮助信息"
+	@echo ""

@@ -13,8 +13,12 @@ apisix:
   
   config_center: etcd
   
+  # 安全提示: 生产环境应配置具体的 IP 白名单
+  # 开发环境允许 Docker 网络内访问
   allow_admin:
-    - 0.0.0.0/0
+    - 127.0.0.1/32
+    - 172.16.0.0/12      # Docker 默认网络
+    - 192.168.0.0/16     # 本地网络
 
 deployment:
   role: traditional
@@ -29,8 +33,11 @@ deployment:
         role: admin
     
     enable_admin_cors: true
+    # 安全提示: 生产环境应配置具体的 IP 白名单
     allow_admin:
-      - 0.0.0.0/0
+      - 127.0.0.1/32
+      - 172.16.0.0/12      # Docker 默认网络
+      - 192.168.0.0/16     # 本地网络
     
     admin_listen:
       ip: 0.0.0.0

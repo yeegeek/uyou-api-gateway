@@ -1,41 +1,223 @@
 # 数据库迁移
 
-本目录包含数据库迁移脚本。
+本目录包含 {{SERVICE_TITLE}} Service 的数据库迁移脚本。
 
-## 使用 migrate 工具
+## 快速开始
 
-### 安装
+### 1. 安装 migrate 工具
 
 ```bash
+# 方式一：使用 go install
 go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# 方式二：使用 brew (macOS)
+brew install golang-migrate
+
+# 方式三：使用 docker
+docker run -v $(pwd)/migrations:/migrations migrate/migrate \
+    -path=/migrations -database "postgres://user:pass@host:5432/dbname?sslmode=disable" up
 ```
 
-### 创建迁移文件
+### 2. 配置数据库连接
+
+设置环境变量（或在 `.env` 文件中配置）：
 
 ```bash
-make migrate-create
-# 输入迁移名称，例如: add_user_email_index
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export DB_NAME={{DB_NAME}}
+export DB_SSLMODE=disable
 ```
 
-### 执行迁移
+### 3. 执行迁移
 
 ```bash
 # 升级到最新版本
 make migrate-up
 
-# 回滚一个版本
-make migrate-down
+# 查看当前版本
+make migrate-version
+
+# 查看迁移状态
+make migrate-status
 ```
 
-### 迁移文件命名
+## 可用命令
 
-迁移文件使用以下命名格式：
-- `000001_<name>.up.sql` - 升级脚本
-- `000001_<name>.down.sql` - 回滚脚本
+| 命令 | 说明 |
+|------|------|
+| `make migrate-up` | 升级到最新版本 |
+| `make migrate-down` | 回滚一个版本 |
+| `make migrate-down-all` | 回滚所有版本（危险） |
+| `make migrate-goto` | 升级/回滚到指定版本 |
+| `make migrate-version` | 查看当前版本 |
+| `make migrate-status` | 查看迁移状态 |
+| `make migrate-create` | 创建新的迁移文件 |
+| `make migrate-force` | 强制设置版本（修复脏状态） |
+| `make migrate-drop` | 删除所有表（危险） |
 
-### 注意事项
+## 迁移文件
 
-1. 迁移文件一旦提交到版本控制，**不要修改**。
-2. 如果需要修改，创建新的迁移文件。
-3. 确保迁移脚本是**幂等**的（可以安全地重复执行）。
-4. 在生产环境执行迁移前，**务必在测试环境验证**。
+### 文件命名规则
+
+```
+migrations/
+├── 000001_init_schema.up.sql     # 第一个迁移 - 升级脚本
+├── 000001_init_schema.down.sql   # 第一个迁移 - 回滚脚本
+├── 000002_add_user_email.up.sql  # 第二个迁移 - 升级脚本
+├── 000002_add_user_email.down.sql # 第二个迁移 - 回滚脚本
+└── ...
+```
+
+### 创建新迁移
+
+```bash
+# 使用 make 命令（推荐）
+make migrate-create
+# 输入迁移名称，例如: add_user_email
+
+# 或直接使用 migrate 命令
+migrate create -ext sql -dir migrations -seq add_user_email
+```
+
+这将生成两个文件：
+- `000002_add_user_email.up.sql` - 升级脚本
+- `000002_add_user_email.down.sql` - 回滚脚本
+
+### 编写迁移脚本示例
+
+**升级脚本 (up.sql)：**
+
+```sql
+-- 添加新列
+ALTER TABLE {{TABLE_NAME}} ADD COLUMN email VARCHAR(255);
+
+-- 创建索引
+CREATE INDEX idx_{{TABLE_NAME}}_email ON {{TABLE_NAME}}(email);
+
+-- 添加约束
+ALTER TABLE {{TABLE_NAME}} ADD CONSTRAINT uq_{{TABLE_NAME}}_email UNIQUE (email);
+```
+
+**回滚脚本 (down.sql)：**
+
+```sql
+-- 删除约束
+ALTER TABLE {{TABLE_NAME}} DROP CONSTRAINT IF EXISTS uq_{{TABLE_NAME}}_email;
+
+-- 删除索引
+DROP INDEX IF EXISTS idx_{{TABLE_NAME}}_email;
+
+-- 删除列
+ALTER TABLE {{TABLE_NAME}} DROP COLUMN IF EXISTS email;
+```
+
+## 最佳实践
+
+### 1. 迁移文件不可修改
+
+一旦迁移文件提交到版本控制，**绝对不要修改**。如果需要更改，创建新的迁移文件。
+
+### 2. 保证幂等性
+
+迁移脚本应该是幂等的（可以安全地重复执行）：
+
+```sql
+-- ✅ 好的写法
+CREATE TABLE IF NOT EXISTS users (...);
+DROP INDEX IF EXISTS idx_users_email;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+
+-- ❌ 不好的写法
+CREATE TABLE users (...);  -- 如果表存在会失败
+DROP INDEX idx_users_email; -- 如果索引不存在会失败
+```
+
+### 3. 回滚脚本必须完整
+
+每个升级操作都要有对应的回滚操作：
+
+```sql
+-- up.sql: 添加列
+ALTER TABLE users ADD COLUMN email VARCHAR(255);
+
+-- down.sql: 删除列（必须有！）
+ALTER TABLE users DROP COLUMN email;
+```
+
+### 4. 大表操作注意事项
+
+对于大表的操作，考虑性能影响：
+
+```sql
+-- 大表添加索引时使用 CONCURRENTLY
+CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
+
+-- 大表修改列时考虑分批处理
+-- 不要直接 ALTER TABLE ... ALTER COLUMN ...
+```
+
+### 5. 先测试再生产
+
+1. 在开发环境测试迁移
+2. 在测试环境验证
+3. 最后在生产环境执行
+
+## 常见问题
+
+### Q: 迁移失败，状态变成 "dirty"
+
+```bash
+# 查看当前状态
+make migrate-version
+# 输出: 2 (dirty)
+
+# 强制修复版本号
+make migrate-force
+# 输入版本号: 1 (回到上一个成功的版本)
+
+# 修复迁移脚本后重新执行
+make migrate-up
+```
+
+### Q: 如何跳过某个迁移？
+
+不推荐跳过迁移。如果必须跳过：
+
+```bash
+# 强制设置版本号跳过
+make migrate-force
+# 输入要跳过到的版本号
+```
+
+### Q: 如何查看迁移历史？
+
+迁移版本存储在 `schema_migrations` 表中：
+
+```sql
+SELECT * FROM schema_migrations;
+```
+
+### Q: Docker 环境中如何执行迁移？
+
+```bash
+# 方式一：在 docker-compose 中添加初始化
+services:
+  migrate:
+    image: migrate/migrate
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://...", "up"]
+    depends_on:
+      - postgres
+
+# 方式二：在应用启动时自动迁移（参考 pkg/migrate/migrate.go）
+```
+
+## 参考链接
+
+- [golang-migrate 文档](https://github.com/golang-migrate/migrate)
+- [PostgreSQL ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html)
+- [数据库迁移最佳实践](https://github.com/golang-migrate/migrate/blob/master/MIGRATIONS.md)
