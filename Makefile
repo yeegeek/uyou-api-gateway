@@ -27,6 +27,8 @@ APISIX_ADMIN_KEY ?= edd1c9f034335f136f87ad84b625c8f1
 ## start: 启动服务 (使用 'make start dev' 启动开发环境)
 start:
 	@echo "🚀 启动服务 $(ENV_SUFFIX)..."
+	@echo "📝 预处理 APISIX 配置..."
+	@bash scripts/apisix-start.sh || true
 	@docker compose $(COMPOSE_FILE) up -d
 	@echo ""
 	@echo "✅ 服务已启动！"
@@ -87,6 +89,7 @@ new-service:
 ## update-routes: 合并并更新路由 (生产环境会同时归档 Proto)
 update-routes:
 	@echo "🔄 正在构建并更新 APISIX 路由配置..."
+	@bash scripts/apisix-start.sh || true
 	@./scripts/merge-routes.sh
 	@echo "✅ 路由配置已同步！"
 

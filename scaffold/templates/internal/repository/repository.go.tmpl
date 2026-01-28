@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"{{MODULE_PATH}}/internal/model"
@@ -87,19 +88,15 @@ func (r *Repository) List{{SERVICE_TITLE}}s(ctx context.Context, page, pageSize 
 	total := int64(len(r.data))
 	
 	// 转换为切片并排序（按 ID 降序）
-	var allItems []*model.{{SERVICE_TITLE}}
+	allItems := make([]*model.{{SERVICE_TITLE}}, 0, len(r.data))
 	for _, item := range r.data {
 		allItems = append(allItems, item)
 	}
 	
-	// 简单排序：按 ID 降序
-	for i := 0; i < len(allItems)-1; i++ {
-		for j := i + 1; j < len(allItems); j++ {
-			if allItems[i].ID < allItems[j].ID {
-				allItems[i], allItems[j] = allItems[j], allItems[i]
-			}
-		}
-	}
+	// 使用标准库排序，时间复杂度 O(n log n)
+	sort.Slice(allItems, func(i, j int) bool {
+		return allItems[i].ID > allItems[j].ID
+	})
 	
 	// 计算分页范围
 	start := (page - 1) * pageSize

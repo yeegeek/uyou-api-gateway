@@ -378,18 +378,26 @@ update_dev_compose() {
         
         case "$DB_TYPE" in
             postgres)
-                echo "      - postgres"
-                echo "      - redis"
-                echo "      - rabbitmq"
+                echo "      postgres:"
+                echo "        condition: service_healthy"
+                echo "      redis:"
+                echo "        condition: service_healthy"
+                echo "      rabbitmq:"
+                echo "        condition: service_healthy"
                 ;;
             mongodb)
-                echo "      - mongodb"
-                echo "      - redis"
-                echo "      - rabbitmq"
+                echo "      mongodb:"
+                echo "        condition: service_healthy"
+                echo "      redis:"
+                echo "        condition: service_healthy"
+                echo "      rabbitmq:"
+                echo "        condition: service_healthy"
                 ;;
             *)
-                echo "      - redis"
-                echo "      - rabbitmq"
+                echo "      redis:"
+                echo "        condition: service_healthy"
+                echo "      rabbitmq:"
+                echo "        condition: service_healthy"
                 ;;
         esac
         

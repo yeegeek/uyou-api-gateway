@@ -31,3 +31,8 @@ dist/
 # Temporary files
 tmp/
 temp/
+
+# APISIX 配置文件 (包含敏感信息，从模板生成)
+apisix/config/config.yaml
+apisix/config/global.yaml
+apisix/config/config.yaml.bak

@@ -1,0 +1,24 @@
+# APISIX 全局配置
+# 包含全局规则 (Global Rules) 和 消费者 (Consumers)
+# 此文件从模板生成，实际配置文件 (global.yaml) 已添加到 .gitignore
+
+# 全局规则应用于所有路由
+global_rules:
+  - id: 1
+    plugins:
+      cors: {}
+      prometheus: {}
+      client-control:
+        max_body_size: 1048576 # 1MB
+
+# 消费者定义 (用于 JWT 认证等)
+# 注意: secret 会在 scripts/merge-routes.sh 同步时从环境变量 JWT_SECRET 注入
+# 请在 .env 文件中设置 JWT_SECRET，不要在此处硬编码生产密钥
+# 此处的 ${JWT_SECRET} 仅作为占位符，实际值由脚本替换
+consumers:
+  - username: "user_key"
+    plugins:
+      jwt-auth:
+        key: "user_key"
+        secret: "${JWT_SECRET}"
+        algorithm: "HS256"

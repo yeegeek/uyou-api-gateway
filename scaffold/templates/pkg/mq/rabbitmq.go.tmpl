@@ -17,6 +17,7 @@ type RabbitMQ struct {
 	log     *logger.Logger
 	mu      sync.RWMutex
 	closed  bool
+	done    chan struct{} // 用于通知重连 goroutine 退出
 
 	// 重连相关
 	reconnectDelay time.Duration
@@ -40,6 +41,7 @@ func New(cfg *Config, log *logger.Logger) (*RabbitMQ, error) {
 	mq := &RabbitMQ{
 		url:            url,
 		log:            log,
+		done:           make(chan struct{}),
 		reconnectDelay: 5 * time.Second,
 		maxRetries:     10,
 	}
@@ -89,14 +91,21 @@ func (r *RabbitMQ) handleReconnect() {
 		r.mu.RUnlock()
 
 		if conn == nil {
-			time.Sleep(r.reconnectDelay)
-			continue
+			select {
+			case <-r.done:
+				return
+			case <-time.After(r.reconnectDelay):
+				continue
+			}
 		}
 
 		// 监听连接关闭事件
 		notifyClose := conn.NotifyClose(make(chan *amqp.Error, 1))
 
 		select {
+		case <-r.done:
+			// 收到关闭信号，退出 goroutine
+			return
 		case err := <-notifyClose:
 			if err != nil {
 				r.log.Warn("RabbitMQ connection closed", logger.Error(err))
@@ -111,14 +120,24 @@ func (r *RabbitMQ) handleReconnect() {
 
 			// 尝试重连
 			for i := 0; i < r.maxRetries; i++ {
+				select {
+				case <-r.done:
+					return
+				default:
+				}
+
 				r.log.Info("Attempting to reconnect to RabbitMQ",
 					logger.Int("attempt", i+1),
 					logger.Int("max_retries", r.maxRetries))
 
 				if err := r.connect(); err != nil {
 					r.log.Error("Failed to reconnect", logger.Error(err))
-					time.Sleep(r.reconnectDelay)
-					continue
+					select {
+					case <-r.done:
+						return
+					case <-time.After(r.reconnectDelay):
+						continue
+					}
 				}
 				break
 			}
@@ -183,7 +202,13 @@ func (r *RabbitMQ) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if r.closed {
+		return nil
+	}
 	r.closed = true
+
+	// 通知重连 goroutine 退出
+	close(r.done)
 
 	if r.channel != nil {
 		r.channel.Close()

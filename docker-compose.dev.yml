@@ -117,7 +117,7 @@ services:
     environment:
       JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
     volumes:
-      - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./apisix/config/config.yaml:/usr/local/apisix/conf/config.yaml
     ports:
       - "9080:9080" # HTTP Gateway
       - "9443:9443" # HTTPS Gateway
@@ -158,9 +158,12 @@ services:
       - "50051:50051"  # gRPC 端口
       - "51051:51051"  # HTTP 健康检查和 Prometheus 指标端口
     depends_on:
-      - postgres
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - uyou-network
     restart: unless-stopped

@@ -7,16 +7,30 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"{{MODULE_PATH}}/internal/model"
 	"{{MODULE_PATH}}/pkg/conf"
 	"{{MODULE_PATH}}/pkg/logger"
 )
 
-// CacheRepository Redis 缓存实现示例
-// 这是一个装饰器模式的示例，可以包装其他 repository 实现缓存功能
+// 缓存过期时间配置
+const (
+	DefaultCacheTTL     = 5 * time.Minute   // 单个实体缓存时间
+	ListCacheTTL        = 1 * time.Minute   // 列表缓存时间（较短，因为列表数据变化频繁）
+	ListCacheVersionTTL = 24 * time.Hour    // 列表版本号过期时间
+)
+
+// CacheRepository Redis 缓存实现
+// 支持单实体缓存和列表缓存，使用版本号实现列表缓存失效
 type CacheRepository struct {
 	client *redis.Client
 	log    *logger.Logger
 	prefix string
+}
+
+// ListCacheResult 列表缓存结果
+type ListCacheResult struct {
+	Items []*model.{{SERVICE_TITLE}} `json:"items"`
+	Total int64                      `json:"total"`
 }
 
 // NewCache 创建 Redis 缓存实例
@@ -47,22 +61,26 @@ func NewCache(c *conf.Config, l *logger.Logger) (*CacheRepository, error) {
 	}, nil
 }
 
+// ==================== 单实体缓存 ====================
+
 // Get 从缓存获取数据
-func (r *CacheRepository) Get(ctx context.Context, key string, dest interface{}) error {
+func (r *CacheRepository) Get(ctx context.Context, key string, dest interface{}) (bool, error) {
 	fullKey := r.prefix + key
 	val, err := r.client.Get(ctx, fullKey).Result()
 	if err == redis.Nil {
-		return nil // 缓存未命中，返回 nil 而不是错误
+		return false, nil // 缓存未命中
 	}
 	if err != nil {
-		return fmt.Errorf("redis get error: %w", err)
+		r.log.Warn("Redis get error", logger.String("key", fullKey), logger.Error(err))
+		return false, nil // Redis 错误时返回未命中，不影响主流程
 	}
 
 	if err := json.Unmarshal([]byte(val), dest); err != nil {
-		return fmt.Errorf("json unmarshal error: %w", err)
+		r.log.Warn("Cache unmarshal error", logger.String("key", fullKey), logger.Error(err))
+		return false, nil
 	}
 
-	return nil
+	return true, nil
 }
 
 // Set 设置缓存
@@ -73,7 +91,12 @@ func (r *CacheRepository) Set(ctx context.Context, key string, value interface{}
 		return fmt.Errorf("json marshal error: %w", err)
 	}
 
-	return r.client.Set(ctx, fullKey, val, expiration).Err()
+	if err := r.client.Set(ctx, fullKey, val, expiration).Err(); err != nil {
+		r.log.Warn("Redis set error", logger.String("key", fullKey), logger.Error(err))
+		return nil // 缓存写入失败不影响主流程
+	}
+
+	return nil
 }
 
 // Delete 删除缓存
@@ -82,7 +105,106 @@ func (r *CacheRepository) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, fullKey).Err()
 }
 
+// ==================== 列表缓存（带版本号失效） ====================
+
+// GetList 从缓存获取列表数据
+func (r *CacheRepository) GetList(ctx context.Context, page, pageSize int) (*ListCacheResult, bool, error) {
+	// 检查列表版本号
+	versionKey := r.prefix + "list:version"
+	version, err := r.client.Get(ctx, versionKey).Result()
+	if err == redis.Nil {
+		return nil, false, nil // 无版本号，缓存未命中
+	}
+	if err != nil {
+		r.log.Warn("Redis get version error", logger.Error(err))
+		return nil, false, nil
+	}
+
+	// 根据版本号和分页参数构建缓存 key
+	listKey := fmt.Sprintf("%slist:v%s:p%d:s%d", r.prefix, version, page, pageSize)
+	val, err := r.client.Get(ctx, listKey).Result()
+	if err == redis.Nil {
+		return nil, false, nil // 缓存未命中
+	}
+	if err != nil {
+		r.log.Warn("Redis get list error", logger.String("key", listKey), logger.Error(err))
+		return nil, false, nil
+	}
+
+	var result ListCacheResult
+	if err := json.Unmarshal([]byte(val), &result); err != nil {
+		r.log.Warn("Cache list unmarshal error", logger.String("key", listKey), logger.Error(err))
+		return nil, false, nil
+	}
+
+	r.log.Debug("List cache hit", logger.String("key", listKey))
+	return &result, true, nil
+}
+
+// SetList 设置列表缓存
+func (r *CacheRepository) SetList(ctx context.Context, page, pageSize int, items []*model.{{SERVICE_TITLE}}, total int64) error {
+	// 获取或创建版本号
+	versionKey := r.prefix + "list:version"
+	version, err := r.client.Get(ctx, versionKey).Result()
+	if err == redis.Nil {
+		// 创建新版本号
+		version = fmt.Sprintf("%d", time.Now().UnixNano())
+		if err := r.client.Set(ctx, versionKey, version, ListCacheVersionTTL).Err(); err != nil {
+			r.log.Warn("Redis set version error", logger.Error(err))
+			return nil
+		}
+	} else if err != nil {
+		r.log.Warn("Redis get version error", logger.Error(err))
+		return nil
+	}
+
+	// 构建缓存数据
+	result := ListCacheResult{
+		Items: items,
+		Total: total,
+	}
+
+	val, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("json marshal error: %w", err)
+	}
+
+	// 设置列表缓存
+	listKey := fmt.Sprintf("%slist:v%s:p%d:s%d", r.prefix, version, page, pageSize)
+	if err := r.client.Set(ctx, listKey, val, ListCacheTTL).Err(); err != nil {
+		r.log.Warn("Redis set list error", logger.String("key", listKey), logger.Error(err))
+		return nil
+	}
+
+	r.log.Debug("List cache set", logger.String("key", listKey))
+	return nil
+}
+
+// InvalidateList 使列表缓存失效（通过更新版本号）
+func (r *CacheRepository) InvalidateList(ctx context.Context) error {
+	versionKey := r.prefix + "list:version"
+	newVersion := fmt.Sprintf("%d", time.Now().UnixNano())
+	if err := r.client.Set(ctx, versionKey, newVersion, ListCacheVersionTTL).Err(); err != nil {
+		r.log.Warn("Redis set version error", logger.Error(err))
+		return nil
+	}
+	r.log.Debug("List cache invalidated", logger.String("new_version", newVersion))
+	return nil
+}
+
+// ==================== 工具方法 ====================
+
+// EntityKey 生成实体缓存 key
+func (r *CacheRepository) EntityKey(id int64) string {
+	return fmt.Sprintf("entity:%d", id)
+}
+
 // Close 关闭 Redis 连接
 func (r *CacheRepository) Close() error {
 	return r.client.Close()
+}
+
+// Client 返回原始 Redis 客户端（用于高级操作）
+func (r *CacheRepository) Client() *redis.Client {
+	return r.client
 }
