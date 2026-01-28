@@ -167,6 +167,318 @@ services:
     networks:
       - uyou-network
     restart: unless-stopped
+
+  # Core Service
+  core:
+    build:
+      context: ./services/core
+      dockerfile: Dockerfile
+    container_name: uyou-core-dev
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: coredb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50051:50051"
+      - "51051:51051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Chat Service
+  chat:
+    build:
+      context: ./services/chat
+      dockerfile: Dockerfile
+    container_name: uyou-chat-dev
+    env_file:
+      - .env
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: example
+      MONGO_DATABASE: chatdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50052:50052"
+      - "51052:51052"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Post Service
+  post:
+    build:
+      context: ./services/post
+      dockerfile: Dockerfile
+    container_name: uyou-post-dev
+    env_file:
+      - .env
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: root
+      MONGO_PASSWORD: example
+      MONGO_DATABASE: postdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 2
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50053:50053"
+      - "51053:51053"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Media Service
+  media:
+    build:
+      context: ./services/media
+      dockerfile: Dockerfile
+    container_name: uyou-media-dev
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: mediadb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 3
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50054:50054"
+      - "51054:51054"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Search Service
+  search:
+    build:
+      context: ./services/search
+      dockerfile: Dockerfile
+    container_name: uyou-search-dev
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 4
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50055:50055"
+      - "51055:51055"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Websocket Service
+  websocket:
+    build:
+      context: ./services/websocket
+      dockerfile: Dockerfile
+    container_name: uyou-websocket-dev
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 5
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50056:50056"
+      - "51056:51056"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Notification Service
+  notification:
+    build:
+      context: ./services/notification
+      dockerfile: Dockerfile
+    container_name: uyou-notification-dev
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: notificationdb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 6
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50057:50057"
+      - "51057:51057"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Ai Service
+  ai:
+    build:
+      context: ./services/ai
+      dockerfile: Dockerfile
+    container_name: uyou-ai-dev
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 7
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50058:50058"
+      - "51058:51058"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
+
+  # Admin Service
+  admin:
+    build:
+      context: ./services/admin
+      dockerfile: Dockerfile
+    container_name: uyou-admin-dev
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: admindb
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 8
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-uyou}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-uyou123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-uyou}
+      JWT_SECRET: ${JWT_SECRET:-uyou_secret_key_2026}
+    ports:
+      - "50059:50059"
+      - "51059:51059"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - uyou-network
+    restart: unless-stopped
   # 新生成的微服务将自动添加到此处
 
 networks:
